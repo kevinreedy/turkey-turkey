@@ -1,5 +1,7 @@
 # Turkey Turkey
 
+[Open the app on GitHub Pages](https://kevinreedy.github.io/turkey-turkey/)
+
 A one-phone web app for Thanksgiving bowling. It shuffles everyone onto lanes for each match, tracks how many games each person bowled, and splits the bill.
 
 ## What it does
