@@ -1,8 +1,9 @@
 import { dealMatch, reviewMatch, previousLanes, gameTotals, settle } from './engine.js';
 import { load, save, newId, backupBlob, backupFilename, parseBackup, freshNight, requestPersistence, lastSaveFailed } from './store.js';
+import { prepareBulkPeople, resetBulkEntry } from './bulk-people.js';
 
 let state = load();
-const ui = { tab: 'match', personId: null, sheet: null };
+const ui = { tab: 'match', personId: null, sheet: null, bulkAdd: false, bulkNames: '', bulkShoes: null };
 
 const $view = document.getElementById('view');
 const $sheet = document.getElementById('sheet');
@@ -332,6 +333,17 @@ function viewPeople() {
       <input id="add-name" data-key="add-name" class="field" name="name" type="text" placeholder="Add a bowler" enterkeyhint="done" autocapitalize="words">
       <button type="submit" class="btn primary" aria-label="Add bowler">${ICON.plus.replace('<svg', '<svg style="width:22px;height:22px;stroke-width:2.4"')}</button>
     </form>
+    <button type="button" class="link-btn" data-action="toggle-bulk-add" aria-expanded="${ui.bulkAdd}" aria-controls="bulk-people-form">${ui.bulkAdd ? 'Hide multiple entry' : 'Add multiple people'}</button>
+    ${ui.bulkAdd ? `<form id="bulk-people-form" class="bulk-form" data-form="add-people" autocomplete="off">
+      <label for="bulk-names">One name per line</label>
+      <textarea id="bulk-names" data-key="bulk-names" class="field multi-names" name="names" rows="5" placeholder="Alex&#10;Jordan&#10;Sam" autocapitalize="words">${esc(ui.bulkNames)}</textarea>
+      <span class="form-label" id="bulk-shoes-label">Shoes for everyone</span>
+      <div class="seg" role="group" aria-labelledby="bulk-shoes-label">
+        <button type="button" data-action="bulk-shoes" data-val="yes" aria-pressed="${ui.bulkShoes === true}">Rented shoes</button>
+        <button type="button" data-action="bulk-shoes" data-val="no" aria-pressed="${ui.bulkShoes === false}">Own pair</button>
+      </div>
+      <button type="submit" class="btn primary">Add people</button>
+    </form>` : ''}
     ${hereList.length ? `<h2 class="section-label">Here · ${hereList.length}</h2><ul class="list">${hereList.map(row).join('')}</ul>` : ''}
     ${away.length ? `<h2 class="section-label">Not here · ${away.length}<span>tap the circle to check in</span></h2><ul class="list">${away.map(row).join('')}</ul>` : ''}
     ${state.people.length ? '' : '<div class="empty"><p>Nobody yet. Add everyone coming tonight — new names are checked in automatically.</p></div>'}`;
@@ -600,6 +612,14 @@ function viewSheet() {
 /* ---------- events ---------- */
 
 const actions = {
+  'toggle-bulk-add'() {
+    ui.bulkAdd = !ui.bulkAdd;
+    render();
+  },
+  'bulk-shoes'(el) {
+    ui.bulkShoes = el.dataset.val === 'yes';
+    render();
+  },
   tab(el) {
     ui.tab = el.dataset.tab;
     ui.sheet = null;
@@ -845,24 +865,43 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('submit', (e) => {
   const form = e.target.closest('[data-form="add-person"]');
-  if (!form) return;
+  if (form) {
+    e.preventDefault();
+    const input = form.querySelector('input');
+    const name = input.value.trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    if (state.people.some((p) => p.name.toLowerCase() === name.toLowerCase())) return toast(`${name} is already on the list`);
+    const id = newId();
+    commit((s) => s.people.push({ id, name, here: true, newcomer: false, knows: [], shoes: null }));
+    input.value = '';
+    input.blur();
+    ui.sheet = { type: 'shoes', id, justAdded: true };
+    render();
+    return;
+  }
+
+  const bulkForm = e.target.closest('[data-form="add-people"]');
+  if (!bulkForm) return;
   e.preventDefault();
-  const input = form.querySelector('input');
-  const name = input.value.trim().replace(/\s+/g, ' ');
-  if (!name) return;
-  if (state.people.some((p) => p.name.toLowerCase() === name.toLowerCase())) return toast(`${name} is already on the list`);
-  const id = newId();
-  commit((s) => s.people.push({ id, name, here: true, newcomer: false, knows: [], shoes: null }));
-  input.value = '';
-  input.blur();
-  ui.sheet = { type: 'shoes', id, justAdded: true };
-  render();
+  const result = prepareBulkPeople(ui.bulkNames, ui.bulkShoes, state.people, newId);
+  if (result.error) {
+    const { type, names } = result.error;
+    if (type === 'shoes') return toast('Choose shoes for everyone');
+    if (type === 'empty') return toast('Enter at least one name');
+    if (type === 'repeated') return toast(`${list(names)} ${names.length === 1 ? 'appears' : 'appear'} more than once`);
+    if (type === 'existing') return toast(`${list(names)} ${names.length === 1 ? 'is' : 'are'} already on the list`);
+  }
+  const { people } = result;
+  resetBulkEntry(ui);
+  commit((s) => s.people.push(...people));
+  toast(`Added ${people.length} ${people.length === 1 ? 'person' : 'people'}`);
 });
 
 document.addEventListener('input', (e) => {
   const el = e.target;
   const a = el.dataset?.action;
-  if (a === 'cost') commit((s) => (s.costs[el.dataset.field] = el.value));
+  if (el.dataset?.key === 'bulk-names') ui.bulkNames = el.value;
+  else if (a === 'cost') commit((s) => (s.costs[el.dataset.field] = el.value));
   else if (a === 'night-name') commit((s) => (s.night.name = el.value), { rerender: false });
   else if (a === 'lane-num') commit((s) => (s.lanes.find((l) => l.id === el.dataset.id).num = el.value.trim()), { rerender: false });
   else if (a === 'rename') {
