@@ -138,18 +138,53 @@ test('pairs games count as half for the bill', () => {
   const t = gameTotals(matches);
   assert.deepEqual(t.get('a'), { regular: 2, pairs: 1, units: 2.5 });
   assert.deepEqual(t.get('b'), { regular: 1, pairs: 1, units: 1.5 });
-  const s = settle(matches, 40);
+  const s = settle(matches, { lanes: 40 });
   assert.equal(s.totalUnits, 4);
   assert.equal(s.perGame, 10);
   assert.equal(s.rows.find((r) => r.id === 'a').owes, 25);
 });
 
-test('shares always add up to the exact bill', () => {
+test('tip rides on games, shoes only on renters', () => {
+  const matches = [
+    { format: 'regular', lanes: [{ num: '1', people: ['a', 'b'] }] },
+    { format: 'pairs', lanes: [{ num: '2', people: ['a', 'b'], groups: [['a', 'b']] }] },
+    { format: 'regular', lanes: [{ num: '1', people: ['a'] }] },
+  ];
+  // 4 game units: a = 2.5, b = 1.5. Lanes $30 + tip $10 = $10/game. b rented shoes at $4.
+  const s = settle(matches, { lanes: 30, tip: 10, shoePrice: 4, renters: ['b'] });
+  const a = s.rows.find((r) => r.id === 'a');
+  const b = s.rows.find((r) => r.id === 'b');
+  assert.equal(s.perGame, 10);
+  assert.deepEqual([a.games, a.shoes, a.owes], [25, 0, 25]);
+  assert.deepEqual([b.games, b.shoes, b.owes], [15, 4, 19]);
+  assert.equal(s.shoesTotal, 4);
+  assert.equal(s.total, 44);
+  assert.equal(s.exactTotal, 44);
+});
+
+test('someone who rented shoes but has no games yet still pays for shoes', () => {
+  const matches = [{ format: 'regular', lanes: [{ num: '1', people: ['a'] }] }];
+  const s = settle(matches, { lanes: 10, shoePrice: 4, renters: ['z'] });
+  assert.equal(s.rows.find((r) => r.id === 'z').owes, 4);
+  assert.equal(s.exactTotal, 14);
+});
+
+test('rounding to the dollar', () => {
+  const lanes = [{ num: '1', people: ['a', 'b', 'c'] }];
+  const s = settle([{ format: 'regular', lanes }], { lanes: 20, tip: 5, shoePrice: 4.5, renters: ['a'] });
+  // $25 over 3 games = 8.33/8.33/8.34 (a gets +4.50 shoes)
+  assert.deepEqual(s.rows.map((r) => r.rounded).sort((x, y) => x - y), [8, 8, 13]);
+  assert.equal(s.roundedTotal, 29);
+  assert.equal(s.total, 29.5);
+});
+
+test('shares always add up to exactly what was paid', () => {
   const lanes = [{ num: '1', people: ['a', 'b', 'c'] }, { num: '2', people: ['d', 'e', 'f', 'g'] }];
   const matches = [{ format: 'regular', lanes }, { format: 'pairs', lanes }, { format: 'regular', lanes: [lanes[0]] }];
-  for (const bill of [250, 99.99, 412.8, 0.07]) {
-    const total = settle(matches, bill).rows.reduce((a, r) => a + Math.round(r.owes * 100), 0);
-    assert.equal(total, Math.round(bill * 100), `bill ${bill}`);
+  for (const [l, tip] of [[250, 0], [99.99, 12.5], [412.8, 61.92], [0.07, 0]]) {
+    const s = settle(matches, { lanes: l, tip, shoePrice: 4, renters: ['a', 'd', 'g'] });
+    const total = s.rows.reduce((a, r) => a + Math.round(r.owes * 100), 0);
+    assert.equal(total, Math.round((l + tip + 12) * 100), `lanes ${l} tip ${tip}`);
   }
 });
 

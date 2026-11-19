@@ -13,14 +13,14 @@ export function defaultState() {
   return {
     v: 1,
     night: { name: `Thanksgiving ${year}`, startedAt: Date.now() },
-    people: [], // {id, name, here, newcomer, knows: [id]}
+    people: [], // {id, name, here, newcomer, knows: [id], shoes: true|false|null}
     never: [], // [idA, idB]
     lanes: ['1', '2', '3', '4'].map((num) => ({ id: newId(), num, on: true })),
     rules: { avoidRepeatLane: true, buddyGames: 2 },
     matches: [], // {id, n, format, startedAt, lanes: [{laneId, num, people, groups?}]}
     preview: null, // {format, lanes}
     nextFormat: 'regular',
-    bill: '',
+    costs: { shoePrice: '4', lanes: '', tip: '', round: false }, // money as typed
     savedAt: null,
   };
 }
@@ -31,7 +31,10 @@ function normalize(s) {
   const out = { ...d, ...s };
   out.night = { ...d.night, ...(s.night || {}) };
   out.rules = { ...d.rules, ...(s.rules || {}) };
-  out.people = (s.people || []).map((p) => ({ here: false, newcomer: false, knows: [], ...p }));
+  out.costs = { ...d.costs, ...(s.costs || {}) };
+  if (s.bill && !s.costs) out.costs.lanes = s.bill; // saves from before shoes/tip existed
+  delete out.bill;
+  out.people = (s.people || []).map((p) => ({ here: false, newcomer: false, knows: [], shoes: null, ...p }));
   out.never = Array.isArray(s.never) ? s.never.filter((x) => Array.isArray(x) && x.length === 2) : [];
   out.lanes = Array.isArray(s.lanes) && s.lanes.length ? s.lanes : d.lanes;
   out.matches = Array.isArray(s.matches) ? s.matches : [];
@@ -91,14 +94,15 @@ export function parseBackup(text) {
   return normalize(s);
 }
 
-/** Same people, lanes and rules; fresh night (no games, nobody checked in). */
+/** Same people, lanes and rules; fresh night (no games, nobody checked in, shoes unasked). */
 export function freshNight(state) {
   const d = defaultState();
   return {
     ...d,
-    people: state.people.map((p) => ({ ...p, here: false })),
+    people: state.people.map((p) => ({ ...p, here: false, shoes: null })),
     never: state.never,
     lanes: state.lanes.map((l) => ({ ...l, on: true })),
     rules: state.rules,
+    costs: { ...d.costs, shoePrice: state.costs?.shoePrice ?? d.costs.shoePrice, round: !!state.costs?.round },
   };
 }

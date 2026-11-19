@@ -349,29 +349,58 @@ export function gameTotals(matches) {
   return totals;
 }
 
-/** Split the bill by game units. Returns cents-rounded amounts per person. */
-export function settle(matches, bill) {
+/**
+ * Split the night's costs.
+ * - Lanes + tip are split by game units (a pairs game is half a unit). The tip rides
+ *   on the games, never on shoes.
+ * - Each person who rented shoes pays the shoe price on top.
+ * Everything is worked in cents; leftover cents from the games split go to the
+ * largest remainders so the shares add up to exactly what was paid.
+ *
+ * @param {object[]} matches
+ * @param {{lanes?:number, tip?:number, shoePrice?:number, renters?:Iterable<string>}} costs
+ */
+export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [] } = {}) {
   const totals = gameTotals(matches);
+  const rented = new Set(renters);
+  for (const id of rented) if (!totals.has(id)) totals.set(id, { regular: 0, pairs: 0, units: 0 });
   let totalUnits = 0;
   for (const t of totals.values()) totalUnits += t.units;
-  const perGame = bill > 0 && totalUnits > 0 ? bill / totalUnits : 0;
-  // Work in cents and hand out the leftover cents (largest remainder first) so the
-  // shares always add up to exactly the bill.
-  const billCents = Math.round(bill * 100);
+
+  const gamesCents = Math.round((lanes + tip) * 100);
+  const shoeCents = Math.round(shoePrice * 100);
+  const canSplit = gamesCents > 0 && totalUnits > 0;
   const rows = [...totals.entries()].map(([id, t]) => {
-    const exact = perGame ? (t.units / totalUnits) * billCents : 0;
+    const exact = canSplit ? (t.units / totalUnits) * gamesCents : 0;
     return { id, ...t, cents: Math.floor(exact), frac: exact - Math.floor(exact) };
   });
-  let left = perGame ? billCents - rows.reduce((a, r) => a + r.cents, 0) : 0;
+  let left = canSplit ? gamesCents - rows.reduce((a, r) => a + r.cents, 0) : 0;
   for (const r of [...rows].sort((a, b) => b.frac - a.frac || a.id.localeCompare(b.id))) {
     if (left <= 0) break;
     r.cents++;
     left--;
   }
+
+  const out = rows.map(({ cents, frac, ...r }) => {
+    const shoes = rented.has(r.id) ? shoeCents : 0;
+    const owes = (cents + shoes) / 100;
+    return { ...r, rentedShoes: rented.has(r.id), games: cents / 100, shoes: shoes / 100, owes, rounded: Math.round(owes) };
+  });
+  const shoeCount = out.filter((r) => r.rentedShoes).length;
+  const shoesTotal = (shoeCount * shoeCents) / 100;
   return {
     totalUnits,
-    perGame,
-    rows: rows.map(({ cents, frac, ...r }) => ({ ...r, owes: cents / 100 })),
+    perGame: canSplit ? (lanes + tip) / totalUnits : 0,
+    lanes,
+    tip,
+    shoePrice,
+    shoeCount,
+    shoesTotal,
+    total: Math.round((lanes + tip + shoesTotal) * 100) / 100,
+    exactTotal: out.reduce((a, r) => a + Math.round(r.owes * 100), 0) / 100,
+    roundedTotal: out.reduce((a, r) => a + r.rounded, 0),
+    unsplit: !canSplit && gamesCents > 0, // lanes/tip entered but no games bowled yet
+    rows: out,
   };
 }
 

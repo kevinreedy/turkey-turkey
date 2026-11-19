@@ -10,7 +10,13 @@ A one-phone web app for Thanksgiving bowling. It shuffles everyone onto lanes fo
 - **Looks after newcomers.** Mark someone as a newcomer, pick who they know, and they'll bowl with one of those people for their first 2 games (the number is adjustable).
 - **Pairs games.** Every lane gets an even number of bowlers so everyone has a partner. With an odd head count, one group becomes a trio. Pairs games count as ½ game on the bill.
 - **People come and go.** Check people in and out on the People tab. Add someone to a match that's already going, swap or move anyone, or sit someone out.
-- **Settle up.** Enter the bill and each person's share is worked out from their games. The shares add up to the exact total, and you can share a summary to the group chat.
+- **Shoes.** When you add someone, the app asks whether they rented shoes. You can change it later on their profile or in the Settle table.
+- **Settle up.** Enter three amounts: the shoe price per person (defaults to $4), what you paid for lanes, and the tip. A receipt-style total lets you check them against the real bill.
+  - Lanes + tip are split by games bowled (a pairs game counts as ½), so the tip goes on games, not shoes.
+  - Each person who rented shoes adds the shoe price.
+  - Shares add up to exactly what was paid, down to the cent.
+  - The **Round to nearest dollar** switch rounds each person's total and shows how far the rounded total is from what was paid.
+  - **Share summary** sends the breakdown to the group chat.
 - **Flexible lanes.** Use 1 to 6+ lanes with your own numbers (e.g. 17–20), and turn them on or off during the night.
 
 ## Where the data lives (free, no account)
@@ -19,7 +25,7 @@ Everything is saved in the phone's browser storage (`localStorage`). Nothing is 
 
 - **Add it to your Home Screen** (Safari → Share → Add to Home Screen). It then opens full screen, works with bad bowling-alley Wi-Fi, and Safari won't clear its data for going unused.
 - Use **Setup → Back up** to save a `.json` file to Files or AirDrop it to yourself, and **Restore** to load it back.
-- **Setup → Start a new night** keeps your people, who-knows-who and never-together pairs for next year, and clears games, check-ins and the bill.
+- **Setup → Start a new night** keeps your people, who-knows-who and never-together pairs for next year, and clears games, check-ins, shoe rentals and the amounts paid.
 
 > This repo is public if you host it on GitHub Pages's free plan, so the roster is deliberately **not** stored in the repo. Names and never-together pairs stay on your phone.
 
@@ -35,7 +41,7 @@ There's no build step. The repo root is the site.
 
 ```bash
 npm start   # serves on http://localhost:8080 (python3 http.server)
-npm test    # node --test: dealing rules, bill split, backups
+npm test    # node --test: dealing rules, cost split, backups
 ```
 
 - `js/engine.js` — pure logic: lane sizes, the dealer (simulated annealing over swaps, scored by the rules below), game totals and bill split.

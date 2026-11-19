@@ -234,6 +234,23 @@ tbody td { color: var(--text-2); }
 tbody td:last-child { color: var(--text); font-weight: 700; }
 tfoot td, tfoot th { border-top: 1px solid var(--line); font-weight: 700; color: var(--text); }
 .left-tag { font-size: 11px; font-weight: 500; color: var(--muted); }
+.money-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 6px 8px 6px 14px; }
+.money-row label { font-size: 15px; }
+.money-input { display: flex; align-items: center; gap: 2px; width: 132px; flex: none; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-family: var(--display); font-weight: 800; font-size: 20px; }
+.money-input span { color: var(--muted); }
+.money-input input { flex: 1; min-width: 0; width: 100%; border: 0; background: none; padding: 0; color: var(--text); font: inherit; text-align: right; }
+.money-input input::placeholder { color: var(--faint); }
+.money-input input:focus { outline: none; }
+.money-input:focus-within { border-color: var(--accent); }
+.receipt { display: flex; flex-direction: column; background: var(--accent-soft); border-radius: 16px; padding: 6px 14px; font-variant-numeric: tabular-nums; }
+.receipt > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-height: 32px; font-size: 15px; color: var(--accent-soft-ink); }
+.receipt small { font-size: 12px; opacity: 0.85; margin-left: 4px; }
+.receipt .total { border-top: 1px solid rgba(248, 210, 160, 0.25); margin-top: 4px; padding: 8px 0 4px; color: var(--text); font-weight: 700; }
+.receipt .total span:last-child { font-family: var(--display); font-weight: 800; font-size: 26px; color: var(--accent); }
+.shoe-btn { min-height: 32px; min-width: 64px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 12px; font-weight: 600; }
+.shoe-btn.on { border-color: transparent; background: var(--accent-soft); color: var(--accent-soft-ink); }
+.shoe-btn.unknown { border-style: dashed; color: var(--text-2); }
+tbody td:has(.shoe-btn) { padding-top: 6px; padding-bottom: 6px; }
 
 /* Bottom sheet */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.15s ease-out; }

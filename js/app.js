@@ -310,6 +310,8 @@ function viewPeople() {
     if (p.newcomer) hint = `<span class="hint new">Newcomer · ${p.knows.length ? `knows ${esc(list(p.knows.map(nameOf)))}` : 'pick who they know'}</span>`;
     else if (nev.length) hint = `<span class="hint never">Never with ${esc(list(nev))}</span>`;
     else if (!p.here && t) hint = '<span class="hint">Gone home</span>';
+    else if (p.here && p.shoes == null) hint = '<span class="hint">Shoes not set</span>';
+    else if (p.shoes === true) hint = '<span class="hint">Rented shoes</span>';
     return `<li><div class="row${p.here ? '' : ' away'}">
       <button type="button" class="row-main" data-action="open-person" data-id="${esc(p.id)}">
         <span class="avatar" aria-hidden="true">${esc(initials(p.name))}</span>
@@ -370,6 +372,13 @@ function viewPerson() {
       <div><dt>Pays for</dt><dd>${games(t.units)}</dd></div>
     </dl>
     <section class="card">
+      <div class="card-head"><div><h2 id="shoes-lbl">Shoes</h2><p>${p.shoes === true ? `Pays ${money(parseMoney(state.costs.shoePrice))} for rental` : p.shoes === false ? 'Brought their own' : 'Not set yet'}</p></div></div>
+      <div class="seg" role="group" aria-labelledby="shoes-lbl">
+        <button type="button" data-action="set-shoes" data-val="yes" aria-pressed="${p.shoes === true}">Rented</button>
+        <button type="button" data-action="set-shoes" data-val="no" aria-pressed="${p.shoes === false}">Own pair</button>
+      </div>
+    </section>
+    <section class="card">
       <div class="card-head">
         <div><h2 id="nc-lbl">Newcomer</h2><p>Bowls with someone they know for their first ${bg} game${bg === 1 ? '' : 's'}</p></div>
         <button type="button" class="switch" role="switch" aria-checked="${p.newcomer}" aria-labelledby="nc-lbl" data-action="toggle-newcomer"></button>
@@ -396,36 +405,72 @@ function viewPerson() {
     <button type="button" class="link-btn" data-action="delete-person" style="color:var(--bad-ink)">Remove ${esc(p.name)} from the list</button>`;
 }
 
+/** The night's split, from what was typed on the Settle tab. */
+function costSplit() {
+  const c = state.costs;
+  return settle(state.matches, {
+    lanes: parseMoney(c.lanes),
+    tip: parseMoney(c.tip),
+    shoePrice: parseMoney(c.shoePrice),
+    renters: state.people.filter((p) => p.shoes === true).map((p) => p.id),
+  });
+}
+
+const dollars = (x) => `$${Math.round(x)}`;
+
 function viewSettle() {
-  const bill = parseMoney(state.bill);
-  const s = settle(state.matches, bill);
+  const s = costSplit();
+  const round = state.costs.round;
   const rows = s.rows.map((r) => ({ ...r, p: person(r.id) })).sort((a, b) => (a.p?.name ?? '').localeCompare(b.p?.name ?? ''));
   const pairsMatches = state.matches.filter((m) => m.format === 'pairs').length;
-  const sum = rows.reduce((a, r) => a + r.owes, 0);
+  const anyMoney = s.total > 0;
+  const unknownShoes = rows.filter((r) => r.p && r.p.shoes == null).map((r) => r.p.name);
+  const collected = round ? s.roundedTotal : s.exactTotal;
+  const diff = Math.round((collected - s.total) * 100) / 100;
+  const moneyField = (field, label, placeholder) => `<li><div class="money-row">
+      <label for="cost-${field}">${label}</label>
+      <span class="money-input"><span aria-hidden="true">$</span><input id="cost-${field}" data-key="cost-${field}" data-action="cost" data-field="${field}" type="text" inputmode="decimal" placeholder="${placeholder}" value="${esc(state.costs[field])}" autocomplete="off"></span>
+    </div></li>`;
+  const shoeCell = (r) => {
+    const v = r.p?.shoes;
+    const label = v === true ? 'Rented' : v === false ? 'Own' : 'Ask';
+    return `<button type="button" class="shoe-btn${v === true ? ' on' : v == null ? ' unknown' : ''}" data-action="shoe-toggle" data-id="${esc(r.id)}" aria-label="${esc(r.p?.name ?? '')} shoes: ${label}. Tap to change">${label}</button>`;
+  };
+
   return `
     <header class="head">
       <h1>Settle up</h1>
       <p class="sub">${state.matches.length} match${state.matches.length === 1 ? '' : 'es'}${pairsMatches ? ` · ${pairsMatches} pairs game${pairsMatches === 1 ? ' counts' : 's count'} as ½` : ''}</p>
     </header>
-    <section class="bill">
-      <div>
-        <label for="bill">Bill total</label>
-        <input id="bill" data-key="bill" data-action="bill" type="text" inputmode="decimal" placeholder="$0.00" value="${esc(state.bill)}" autocomplete="off">
-      </div>
-      <div class="per"><span class="lbl">Per game</span><b>${s.perGame ? money(s.perGame) : '—'}</b></div>
+    <ul class="list">
+      ${moneyField('shoePrice', 'Shoe rental, per person', '4.00')}
+      ${moneyField('lanes', 'Paid for lanes', '0.00')}
+      ${moneyField('tip', 'Tip', '0.00')}
+    </ul>
+    <section class="receipt" aria-label="Total paid">
+      <div><span>Shoes <small>${s.shoeCount} × ${money(s.shoePrice)}</small></span><span>${money(s.shoesTotal)}</span></div>
+      <div><span>Lanes</span><span>${money(s.lanes)}</span></div>
+      <div><span>Tip</span><span>${money(s.tip)}</span></div>
+      <div class="total"><span>Total paid</span><span>${money(s.total)}</span></div>
     </section>
-    <p class="note">${games(s.totalUnits)} games across ${rows.length} bowler${rows.length === 1 ? '' : 's'}. Each person pays for the games they bowled.</p>
+    <p class="note">${s.perGame ? `${money(s.perGame)} per game (lanes + tip ÷ ${games(s.totalUnits)} games). ` : ''}The tip is split across games only. Shoes go to the people who rented.</p>
+    ${unknownShoes.length ? `<div class="notice">${ICON.info}<span>Shoes not set for ${esc(list(unknownShoes))}. Tap their Shoes cell below. Until then they don't pay for shoes.</span></div>` : ''}
+    ${s.unsplit ? `<div class="notice warn">${ICON.warn}<span>Lanes and tip get split once someone has bowled a game.</span></div>` : ''}
     ${
       rows.length
-        ? `<div class="table-wrap"><table>
-      <thead><tr><th scope="col">Bowler</th><th scope="col">Games</th><th scope="col">Pairs</th><th scope="col">Owes</th></tr></thead>
+        ? `<ul class="list"><li><div class="setting">
+      <span class="label"><span id="round-lbl">Round to nearest dollar</span><span>${anyMoney ? (round ? `Collects ${money(collected)}${diff ? ` · ${money(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than paid` : ' · exactly what was paid'}` : `Collects exactly ${money(collected)}`) : 'For each person’s total'}</span></span>
+      <button type="button" class="switch" role="switch" aria-checked="${round}" aria-labelledby="round-lbl" data-action="round-toggle"></button>
+    </div></li></ul>
+    <div class="table-wrap"><table>
+      <thead><tr><th scope="col">Bowler</th><th scope="col">Games</th><th scope="col">Shoes</th><th scope="col">Owes</th></tr></thead>
       <tbody>${rows
         .map(
           (r) => `<tr><th scope="row">${esc(r.p?.name ?? 'Someone removed')}${r.p && !r.p.here ? ' <span class="left-tag">· left</span>' : ''}</th>
-        <td>${r.regular}</td><td>${r.pairs ? `${r.pairs} × ½` : '—'}</td><td>${bill ? money(r.owes) : games(r.units)}</td></tr>`
+        <td>${games(r.units)}</td><td>${r.p ? shoeCell(r) : '—'}</td><td>${anyMoney ? (round ? dollars(r.owes) : money(r.owes)) : '—'}</td></tr>`
         )
         .join('')}</tbody>
-      ${bill ? `<tfoot><tr><th scope="row">Total</th><td></td><td></td><td>${money(sum)}</td></tr></tfoot>` : ''}
+      ${anyMoney ? `<tfoot><tr><th scope="row">Total</th><td>${games(s.totalUnits)}</td><td>${s.shoeCount}</td><td>${round ? dollars(collected) : money(collected)}</td></tr></tfoot>` : ''}
     </table></div>
     <button type="button" class="btn primary" data-action="share-summary">${ICON.copy}Share summary</button>`
         : '<div class="empty"><p>No games bowled yet. Tallies show up here as soon as the first match starts.</p></div>'
@@ -480,7 +525,7 @@ function viewSetup() {
     </div>
     <p class="note">Everything stays in this browser. Add the app to your Home Screen so Safari keeps it, and back up before clearing Safari data or switching phones.</p>
     <button type="button" class="btn small danger" data-action="new-night">Start a new night</button>
-    <p class="note">Keeps your people, who-knows-who and never-together pairs. Clears games, check-ins and the bill.</p>`;
+    <p class="note">Keeps your people, who-knows-who and never-together pairs. Clears games, check-ins, shoe rentals and the amounts paid.</p>`;
 }
 
 /* ---------- sheets ---------- */
@@ -527,6 +572,13 @@ function viewSheet() {
         .join('')}</div>
       ${others.length ? '' : '<p class="sub">Add more people first.</p>'}
       <button type="button" class="btn primary" data-action="close-sheet">Done</button>`;
+  } else if (s.type === 'shoes') {
+    const p = person(s.id);
+    body = `<h2>Did ${esc(p?.name ?? 'they')} rent shoes?</h2>
+      <p class="sub">${s.justAdded ? 'Added and checked in. ' : ''}You can change this later on their profile or the Settle tab.</p>
+      <button type="button" class="btn primary" data-action="set-shoes" data-id="${esc(s.id)}" data-val="yes">Rented shoes</button>
+      <button type="button" class="btn" data-action="set-shoes" data-id="${esc(s.id)}" data-val="no">Brought their own</button>
+      <button type="button" class="link-btn" data-action="set-shoes" data-id="${esc(s.id)}" data-val="">Not sure yet</button>`;
   } else if (s.type === 'late') {
     const current = state.matches[state.matches.length - 1];
     const inMatch = new Set(current.lanes.flatMap((l) => l.people));
@@ -681,6 +733,23 @@ const actions = {
     if (state.lanes.length === 1) return toast('Keep at least one lane');
     commit((s) => (s.lanes = s.lanes.filter((l) => l.id !== el.dataset.id)));
   },
+  'set-shoes'(el) {
+    const id = el.dataset.id || ui.personId;
+    const v = el.dataset.val === 'yes' ? true : el.dataset.val === 'no' ? false : null;
+    const wasNew = ui.sheet?.justAdded;
+    ui.sheet = null;
+    commit((s) => (s.people.find((p) => p.id === id).shoes = v));
+    if (wasNew) toast(`${nameOf(id)} added and checked in`);
+  },
+  'shoe-toggle'(el) {
+    commit((s) => {
+      const p = s.people.find((x) => x.id === el.dataset.id);
+      p.shoes = p.shoes === true ? false : true;
+    });
+  },
+  'round-toggle'() {
+    commit((s) => (s.costs.round = !s.costs.round));
+  },
   'rule-repeat'() {
     commit((s) => (s.rules.avoidRepeatLane = !s.rules.avoidRepeatLane));
   },
@@ -710,7 +779,7 @@ const actions = {
     $restore.click();
   },
   'new-night'() {
-    if (!confirm('Start a new night? Games, check-ins and the bill are cleared. People, who-knows-who and never-together pairs stay. Back up first if you want a record.')) return;
+    if (!confirm('Start a new night? Games, check-ins, shoe rentals and the amounts paid are cleared. People, who-knows-who and never-together pairs stay. Back up first if you want a record.')) return;
     state = freshNight(state);
     save(state);
     ui.tab = 'people';
@@ -738,14 +807,25 @@ const actions = {
 };
 
 function summaryText() {
-  const bill = parseMoney(state.bill);
-  const s = settle(state.matches, bill);
+  const s = costSplit();
+  const round = state.costs.round;
+  const fmt = (x) => (round ? dollars(x) : money(x));
   const lines = [`${state.night.name} bowling`];
-  if (bill) lines.push(`Bill ${money(bill)} · ${games(s.totalUnits)} games · ${money(s.perGame)} per game`);
+  if (s.total > 0) {
+    lines.push(`Lanes ${money(s.lanes)} + tip ${money(s.tip)} = ${money(s.lanes + s.tip)} over ${games(s.totalUnits)} games (${money(s.perGame)}/game)`);
+    if (s.shoeCount) lines.push(`Shoes ${money(s.shoePrice)} each for ${s.shoeCount} ${s.shoeCount === 1 ? 'person' : 'people'}`);
+    lines.push(`Total paid ${money(s.total)}`);
+  }
   lines.push('');
   const rows = s.rows.map((r) => ({ ...r, name: nameOf(r.id) })).sort((a, b) => a.name.localeCompare(b.name));
-  for (const r of rows) lines.push(`${r.name}: ${games(r.units)} game${r.units === 1 ? '' : 's'}${bill ? ` — ${money(r.owes)}` : ''}`);
-  if (state.matches.some((m) => m.format === 'pairs')) lines.push('', '(Pairs games count as ½)');
+  for (const r of rows) {
+    const detail = `${games(r.units)} game${r.units === 1 ? '' : 's'}${r.rentedShoes ? ' + shoes' : ''}`;
+    lines.push(s.total > 0 ? `${r.name}: ${fmt(r.owes)} (${detail})` : `${r.name}: ${detail}`);
+  }
+  const notes = [];
+  if (state.matches.some((m) => m.format === 'pairs')) notes.push('pairs games count as ½');
+  if (round && s.total > 0) notes.push('rounded to the dollar');
+  if (notes.length) lines.push('', `(${notes.join('; ')})`);
   return lines.join('\n');
 }
 
@@ -770,14 +850,18 @@ document.addEventListener('submit', (e) => {
   const name = input.value.trim().replace(/\s+/g, ' ');
   if (!name) return;
   if (state.people.some((p) => p.name.toLowerCase() === name.toLowerCase())) return toast(`${name} is already on the list`);
-  commit((s) => s.people.push({ id: newId(), name, here: true, newcomer: false, knows: [] }));
-  toast(`${name} added and checked in`);
+  const id = newId();
+  commit((s) => s.people.push({ id, name, here: true, newcomer: false, knows: [], shoes: null }));
+  input.value = '';
+  input.blur();
+  ui.sheet = { type: 'shoes', id, justAdded: true };
+  render();
 });
 
 document.addEventListener('input', (e) => {
   const el = e.target;
   const a = el.dataset?.action;
-  if (a === 'bill') commit((s) => (s.bill = el.value));
+  if (a === 'cost') commit((s) => (s.costs[el.dataset.field] = el.value));
   else if (a === 'night-name') commit((s) => (s.night.name = el.value), { rerender: false });
   else if (a === 'lane-num') commit((s) => (s.lanes.find((l) => l.id === el.dataset.id).num = el.value.trim()), { rerender: false });
   else if (a === 'rename') {
