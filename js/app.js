@@ -224,6 +224,7 @@ function issueNotices(issues) {
     .map((i) => {
       if (i.type === 'never') return `${esc(list(i.people.map(nameOf)))} are both on lane ${esc(i.lane)}.`;
       if (i.type === 'buddy') return `${esc(nameOf(i.people[0]))} isn't with anyone they know.`;
+      if (i.type === 'familiar') return `${esc(nameOf(i.people[0]))} isn't with anyone they've bowled with yet.`;
       if (i.type === 'noBuddyHere') return `Nobody ${esc(nameOf(i.people[0]))} knows is checked in.`;
       return '';
     })

@@ -4,6 +4,8 @@
 export const WEIGHTS = {
   never: 1_000_000, // a "never together" pair on one lane
   buddy: 10_000, // a newcomer (still in their buddy games) without someone they know
+  familiar: 3_000, // a newcomer's first game after their buddy games, with nobody they've shared a lane with
+  familiarSecond: 300, // …with only one such person, when a second one is here
   repeatLane: 120, // same lane number as the person's previous match
   together: 10, // × c² where c = matches this pair already shared a lane
   lastMatchTogether: 6, // extra nudge apart if they shared a lane in the very last match
@@ -107,6 +109,14 @@ function makeContext({ people, matches, never, rules }) {
     if (knows.get(p.id).size > 0) needy.add(p.id);
     else noBuddyHere.push(p.id);
   }
+  // A newcomer's first game after their buddy games: newcomer id -> present people
+  // they've already shared a lane with, so they're not dropped among strangers.
+  const easing = new Map();
+  for (const p of people) {
+    if (!p.newcomer || buddyGames < 1 || (hist.played.get(p.id) || 0) !== buddyGames) continue;
+    const mates = new Set(people.filter((q) => q.id !== p.id && hist.together.get(pairKey(p.id, q.id))).map((q) => q.id));
+    if (mates.size) easing.set(p.id, mates);
+  }
   const neverSet = new Set();
   for (const [a, b] of never || []) neverSet.add(pairKey(a, b));
   return {
@@ -114,9 +124,16 @@ function makeContext({ people, matches, never, rules }) {
     knows,
     needy,
     noBuddyHere,
+    easing,
     neverSet,
     avoidRepeat: rules.avoidRepeatLane !== false,
   };
+}
+
+function familiarCount(p, members, mates) {
+  let n = 0;
+  for (const q of members) if (q !== p && mates.has(q)) n++;
+  return n;
 }
 
 /** Cost of one lane. `groups` is an array of group sizes (pairs format) or null. */
@@ -133,6 +150,14 @@ function laneCost(members, num, groups, ctx) {
       c += WEIGHTS.together * t * t;
       if (ctx.lastMates.has(k)) c += WEIGHTS.lastMatchTogether;
     }
+  }
+  // Familiar faces count by lane, in pairs games too.
+  for (const p of members) {
+    const mates = ctx.easing.get(p);
+    if (!mates) continue;
+    const seen = familiarCount(p, members, mates);
+    if (seen === 0) c += WEIGHTS.familiar;
+    else if (seen === 1 && mates.size >= 2) c += WEIGHTS.familiarSecond;
   }
   if (!groups) {
     for (const p of members) {
@@ -295,6 +320,10 @@ export function reviewMatch({ lanes, people, matches = [], never = [], rules = {
         if (ctx.neverSet.has(k)) issues.push({ type: 'never', people: [ppl[i], ppl[j]], lane: lane.num });
         if (!ctx.together.get(k)) firstTime++;
       }
+    }
+    for (const p of ppl) {
+      const mates = ctx.easing.get(p);
+      if (mates && familiarCount(p, ppl, mates) === 0) issues.push({ type: 'familiar', people: [p], lane: lane.num });
     }
     const groups = lane.groups || [ppl];
     for (const g of groups) {
