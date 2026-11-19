@@ -7,7 +7,7 @@ A one-phone web app for Thanksgiving bowling. It shuffles everyone onto lanes fo
 - **Deals each match.** Lanes stay as even as possible (22 people on 4 lanes → 6 · 6 · 5 · 5). Each deal tries to put you with people you haven't bowled with yet, without just swapping half of one lane with half of another.
 - **Avoids repeat lanes.** Nobody bowls the same lane number twice in a row, when it can be avoided. (You can turn this off in Setup.)
 - **Keeps "never together" pairs apart**, in every format.
-- **Looks after newcomers.** Mark someone as a newcomer, pick who they know, and they'll bowl with one of those people for their first 2 games (the number is adjustable).
+- **Looks after newcomers.** Mark someone as a newcomer, pick who they know, and they'll bowl with one of those people for their first 2 games (the number is adjustable). In the game after that, they'll share a lane with at least one, ideally two, people they've already bowled with, before mixing in fully.
 - **Pairs games.** Every lane gets an even number of bowlers so everyone has a partner. With an odd head count, one group becomes a trio. Pairs games count as ½ game on the bill.
 - **People come and go.** Check people in and out on the People tab. Add someone to a match that's already going, swap or move anyone, or sit someone out.
 - **Shoes.** When you add someone, the app asks whether they rented shoes. You can change it later on their profile or in the Settle table.
@@ -58,6 +58,8 @@ Each candidate lineup gets a cost, and the dealer keeps the cheapest one it find
 | --- | --- |
 | A never-together pair on one lane | 1,000,000 |
 | A newcomer (still in their buddy games) without someone they know on their lane (or as their partner, in pairs) | 10,000 |
+| A newcomer's first game after their buddy games with nobody they've already shared a lane with | 3,000 |
+| …or with only one of them, when two or more are here | 300 |
 | Same lane number as that person's previous match | 120 |
 | Two people who already shared a lane *c* times | 10 × *c*² |
 | …and they were together in the very last match | +6 |

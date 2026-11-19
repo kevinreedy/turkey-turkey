@@ -80,6 +80,32 @@ test('newcomers get someone they know for their first two games', () => {
   }
 });
 
+test('after their buddy games, a newcomer bowls with people they already shared a lane with', () => {
+  const lanes = [15, 16, 17, 18, 19, 20].map((n) => ({ id: `l${n}`, num: String(n) }));
+  const people = crowd(20);
+  people[0] = { id: 'p0', newcomer: true, knows: ['p9'] };
+  for (let seed = 1; seed <= 8; seed++) {
+    const matches = night({ people, lanes, count: 4, seed, format: (i) => (i === 2 && seed % 2 ? 'pairs' : 'regular') });
+    const before = new Set(matches.slice(0, 2).flatMap((m) => m.lanes.find((l) => l.people.includes('p0')).people));
+    const lane = matches[2].lanes.find((l) => l.people.includes('p0'));
+    const familiar = lane.people.filter((q) => q !== 'p0' && before.has(q));
+    assert.ok(familiar.length >= 2, `seed ${seed}: only ${familiar.length} familiar on lane ${lane.num}`);
+  }
+});
+
+test('review flags a newcomer stranded among strangers after their buddy games', () => {
+  const people = [{ id: 'a', newcomer: true, knows: ['b'] }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const matches = [{ format: 'regular', lanes: [{ num: '1', people: ['a', 'b'] }, { num: '2', people: ['c', 'd'] }] }];
+  const rules = { buddyGames: 1 };
+  const lonely = reviewMatch({ lanes: [{ num: '1', people: ['a', 'c'] }, { num: '2', people: ['b', 'd'] }], people, matches, rules });
+  assert.ok(lonely.issues.some((i) => i.type === 'familiar' && i.people[0] === 'a'));
+  const eased = reviewMatch({ lanes: [{ num: '1', people: ['a', 'b'] }, { num: '2', people: ['c', 'd'] }], people, matches, rules });
+  assert.ok(!eased.issues.some((i) => i.type === 'familiar'));
+  // Only the first game after the buddy games is eased.
+  const later = reviewMatch({ lanes: [{ num: '1', people: ['a', 'c'] }, { num: '2', people: ['b', 'd'] }], people, matches: [...matches, ...matches], rules });
+  assert.ok(!later.issues.some((i) => i.type === 'familiar'));
+});
+
 test('with 4 lanes nobody repeats their previous lane', () => {
   const matches = night({ people: crowd(22), lanes: LANES4, count: 8 });
   for (let i = 1; i < matches.length; i++) {
