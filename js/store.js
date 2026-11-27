@@ -20,9 +20,16 @@ export function defaultState() {
     matches: [], // {id, n, format, startedAt, lanes: [{laneId, num, people, groups?}]}
     preview: null, // {format, lanes}
     nextFormat: 'regular',
-    costs: { shoePrice: '4', lanes: '', tip: '', round: false }, // money as typed
+    costs: { shoePrice: '4', lanes: '', tip: '', round: 0 }, // money as typed; round: 0 (exact), 0.5 or 1 dollars
     savedAt: null,
   };
+}
+
+/** Rounding step in dollars: 0 (exact), 0.5 or 1. Older saves stored true/false for whole dollars. */
+export function roundStep(v) {
+  if (v === true) return 1;
+  const n = Number(v);
+  return n === 0.5 || n === 1 ? n : 0;
 }
 
 /** Fill in anything missing (older saves, hand-edited backups). */
@@ -33,6 +40,7 @@ function normalize(s) {
   out.rules = { ...d.rules, ...(s.rules || {}) };
   out.costs = { ...d.costs, ...(s.costs || {}) };
   if (s.bill && !s.costs) out.costs.lanes = s.bill; // saves from before shoes/tip existed
+  out.costs.round = roundStep(out.costs.round);
   delete out.bill;
   out.people = (s.people || []).map((p) => ({ here: false, newcomer: false, knows: [], shoes: null, ...p }));
   out.never = Array.isArray(s.never) ? s.never.filter((x) => Array.isArray(x) && x.length === 2) : [];
@@ -103,6 +111,6 @@ export function freshNight(state) {
     never: state.never,
     lanes: state.lanes.map((l) => ({ ...l, on: true })),
     rules: state.rules,
-    costs: { ...d.costs, shoePrice: state.costs?.shoePrice ?? d.costs.shoePrice, round: !!state.costs?.round },
+    costs: { ...d.costs, shoePrice: state.costs?.shoePrice ?? d.costs.shoePrice, round: roundStep(state.costs?.round) },
   };
 }

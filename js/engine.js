@@ -385,11 +385,13 @@ export function gameTotals(matches) {
  * - Each person who rented shoes pays the shoe price on top.
  * Everything is worked in cents; leftover cents from the games split go to the
  * largest remainders so the shares add up to exactly what was paid.
+ * `rounded` is each person's total rounded to the nearest `roundTo` dollars
+ * (1 for whole dollars, 0.5 for 50¢); halfway rounds up.
  *
  * @param {object[]} matches
- * @param {{lanes?:number, tip?:number, shoePrice?:number, renters?:Iterable<string>}} costs
+ * @param {{lanes?:number, tip?:number, shoePrice?:number, renters?:Iterable<string>, roundTo?:number}} costs
  */
-export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [] } = {}) {
+export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [], roundTo = 1 } = {}) {
   const totals = gameTotals(matches);
   const rented = new Set(renters);
   for (const id of rented) if (!totals.has(id)) totals.set(id, { regular: 0, pairs: 0, units: 0 });
@@ -398,6 +400,7 @@ export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [
 
   const gamesCents = Math.round((lanes + tip) * 100);
   const shoeCents = Math.round(shoePrice * 100);
+  const stepCents = Math.max(1, Math.round(roundTo * 100));
   const canSplit = gamesCents > 0 && totalUnits > 0;
   const rows = [...totals.entries()].map(([id, t]) => {
     const exact = canSplit ? (t.units / totalUnits) * gamesCents : 0;
@@ -413,7 +416,8 @@ export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [
   const out = rows.map(({ cents, frac, ...r }) => {
     const shoes = rented.has(r.id) ? shoeCents : 0;
     const owes = (cents + shoes) / 100;
-    return { ...r, rentedShoes: rented.has(r.id), games: cents / 100, shoes: shoes / 100, owes, rounded: Math.round(owes) };
+    const rounded = (Math.round((cents + shoes) / stepCents) * stepCents) / 100;
+    return { ...r, rentedShoes: rented.has(r.id), games: cents / 100, shoes: shoes / 100, owes, rounded };
   });
   const shoeCount = out.filter((r) => r.rentedShoes).length;
   const shoesTotal = (shoeCount * shoeCents) / 100;
@@ -427,7 +431,8 @@ export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [
     shoesTotal,
     total: Math.round((lanes + tip + shoesTotal) * 100) / 100,
     exactTotal: out.reduce((a, r) => a + Math.round(r.owes * 100), 0) / 100,
-    roundedTotal: out.reduce((a, r) => a + r.rounded, 0),
+    roundedTotal: out.reduce((a, r) => a + Math.round(r.rounded * 100), 0) / 100,
+    roundTo,
     unsplit: !canSplit && gamesCents > 0, // lanes/tip entered but no games bowled yet
     rows: out,
   };
