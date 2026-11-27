@@ -1,9 +1,10 @@
 import { dealMatch, reviewMatch, previousLanes, gameTotals, settle } from './engine.js';
 import { load, save, newId, backupBlob, backupFilename, parseBackup, freshNight, requestPersistence, lastSaveFailed } from './store.js';
 import { prepareBulkPeople, resetBulkEntry } from './bulk-people.js';
+import { removeFromLanes, placeOnLane, swapInLanes, convertFormat, renumber, historySignature } from './lineup.js';
 
 let state = load();
-const ui = { tab: 'match', personId: null, sheet: null, bulkAdd: false, bulkNames: '', bulkShoes: null };
+const ui = { tab: 'match', personId: null, sheet: null, editId: null, bulkAdd: false, bulkNames: '', bulkShoes: null };
 
 const $view = document.getElementById('view');
 const $sheet = document.getElementById('sheet');
@@ -14,6 +15,7 @@ const $restore = document.getElementById('restore-file');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+const byNum = (a, b) => String(a.num).localeCompare(String(b.num), undefined, { numeric: true });
 const person = (id) => state.people.find((p) => p.id === id);
 const nameOf = (id) => person(id)?.name ?? 'Someone removed';
 const here = () => state.people.filter((p) => p.here);
@@ -86,7 +88,7 @@ function deal(format = state.nextFormat) {
   const res = dealMatch({ people, lanes, matches: state.matches, format, never: state.never, rules: state.rules });
   commit((s) => {
     s.nextFormat = format;
-    s.preview = { format, lanes: res.lanes, dealtFor: people.map((p) => p.id).sort() };
+    s.preview = { format, lanes: res.lanes, dealtFor: people.map((p) => p.id).sort(), historySig: historySignature(s.matches) };
   });
 }
 
@@ -105,58 +107,100 @@ function undoStart() {
   if (!m || !confirm(`Undo match ${m.n}? Its games come off everyone's tally and it goes back to "up next".`)) return;
   commit((s) => {
     s.matches.pop();
-    s.preview = { format: m.format, lanes: m.lanes, dealtFor: m.lanes.flatMap((l) => l.people).sort() };
+    s.preview = { format: m.format, lanes: m.lanes, dealtFor: m.lanes.flatMap((l) => l.people).sort(), historySig: historySignature(s.matches) };
   });
 }
 
-/** The lineup being edited: the preview if there is one, else the match being bowled now. */
+/**
+ * The lineup that taps on a name change: the match open in the editor, else the
+ * preview, else the match being bowled now.
+ */
+function editTarget(s = state) {
+  if (ui.editId) {
+    const m = s.matches.find((x) => x.id === ui.editId);
+    if (m) return { kind: 'edit', obj: m };
+  }
+  if (s.preview) return { kind: 'preview', obj: s.preview };
+  const last = s.matches[s.matches.length - 1];
+  return last ? { kind: 'current', obj: last } : null;
+}
+
 function editableLanes() {
-  if (state.preview) return state.preview.lanes;
-  return state.matches[state.matches.length - 1]?.lanes ?? null;
+  return editTarget()?.obj.lanes ?? null;
+}
+
+/** Lanes a match can use in the editor: every lane that's on, plus any it already uses. */
+function editorLanes(m) {
+  const out = activeLanes().map((l) => ({ laneId: l.id, num: String(l.num) }));
+  for (const l of m.lanes) if (!out.some((x) => x.laneId === l.laneId)) out.push({ laneId: l.laneId, num: String(l.num) });
+  return out.sort(byNum);
+}
+
+/** Lanes someone can be moved to in the lineup being edited. */
+function laneSlots(t = editTarget()) {
+  if (t?.kind === 'edit') return editorLanes(t.obj);
+  return activeLanes().map((l) => ({ laneId: l.id, num: String(l.num) }));
 }
 
 function mapLanes(fn) {
   commit((s) => {
-    const target = s.preview ? s.preview : s.matches[s.matches.length - 1];
-    target.lanes = fn(target.lanes).filter((l) => l.people.length);
+    const t = editTarget(s);
+    if (t) t.obj.lanes = fn(t.obj.lanes, t.obj).filter((l) => l.people.length);
   });
 }
 
 function swapPeople(a, b) {
-  const sw = (x) => (x === a ? b : x === b ? a : x);
-  mapLanes((lanes) => lanes.map((l) => ({ ...l, people: l.people.map(sw), ...(l.groups ? { groups: l.groups.map((g) => g.map(sw)) } : {}) })));
-}
-
-function removeFromLanes(lanes, id) {
-  return lanes.map((l) => ({
-    ...l,
-    people: l.people.filter((x) => x !== id),
-    ...(l.groups ? { groups: l.groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length) } : {}),
-  }));
+  mapLanes((lanes) => swapInLanes(lanes, a, b));
 }
 
 function moveTo(id, laneId) {
-  const lane = state.lanes.find((l) => l.id === laneId);
-  mapLanes((lanes) => {
-    const out = removeFromLanes(lanes, id);
-    let target = out.find((l) => l.laneId === laneId);
-    if (!target) {
-      target = { laneId, num: String(lane.num), people: [], ...(lanes[0]?.groups ? { groups: [] } : {}) };
-      out.push(target);
-    }
-    target.people.push(id);
-    if (target.groups) {
-      const solo = target.groups.find((g) => g.length === 1);
-      if (solo) solo.push(id);
-      else target.groups.push([id]);
-      target.people = target.groups.flat();
-    }
-    return out.sort((a, b) => a.num.localeCompare(b.num, undefined, { numeric: true }));
-  });
+  const slot = laneSlots().find((l) => l.laneId === laneId);
+  if (!slot) return;
+  mapLanes((lanes, m) => placeOnLane(lanes, id, slot, m.format === 'pairs'));
 }
 
 function sitOut(id) {
   mapLanes((lanes) => removeFromLanes(lanes, id));
+}
+
+/* ---------- fixing a match by hand ---------- */
+
+function openEdit(id) {
+  ui.editId = id;
+  ui.sheet = null;
+  ui.tab = 'match';
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+/** A match that happened without the app (e.g. it started before you got there). */
+function recordMatch() {
+  const id = newId();
+  const format = state.preview ? 'regular' : state.nextFormat;
+  ui.editId = id;
+  ui.sheet = null;
+  commit((s) => s.matches.push({ id, n: s.matches.length + 1, format, startedAt: Date.now(), manual: true, lanes: [] }));
+  window.scrollTo({ top: 0 });
+}
+
+/** Leave the editor. A match nobody was put on is dropped rather than left empty. */
+function closeEdit() {
+  const m = state.matches.find((x) => x.id === ui.editId);
+  ui.editId = null;
+  ui.sheet = null;
+  if (m && !m.lanes.length) {
+    commit((s) => (s.matches = renumber(s.matches.filter((x) => x.id !== m.id))));
+    toast(`Nobody was on match ${m.n}, so it wasn't kept`);
+  } else render();
+}
+
+function deleteMatch() {
+  const m = state.matches.find((x) => x.id === ui.editId);
+  if (!m || !confirm(`Delete match ${m.n}? Its games come off everyone's tally.`)) return;
+  ui.editId = null;
+  ui.sheet = null;
+  commit((s) => (s.matches = renumber(s.matches.filter((x) => x.id !== m.id))));
+  toast(`Match ${m.n} deleted`);
 }
 
 /* ---------- views ---------- */
@@ -186,7 +230,7 @@ function render() {
   }
 }
 
-function laneCards(lanes, { format, meta = {}, buddies = {} }) {
+function laneCards(lanes, { format, meta = {}, buddies = {}, addable = false }) {
   const pairs = format === 'pairs';
   const who = (id) => {
     const p = person(id);
@@ -207,16 +251,17 @@ function laneCards(lanes, { format, meta = {}, buddies = {} }) {
         : l.people.map((id) => `<li>${who(id)}</li>`).join('');
       return `<section class="lane" style="--c:${laneColor(l.laneId)}">
         <div class="lane-head"><h2><span class="swatch" aria-hidden="true"></span>Lane ${esc(l.num)}</h2><span class="count">${l.people.length}</span></div>
-        <ul>${rows}</ul>
+        ${rows ? `<ul>${rows}</ul>` : '<p class="empty-lane">Nobody yet</p>'}
+        ${addable ? `<button type="button" class="lane-add" data-action="sheet-lane" data-lane="${esc(l.laneId)}">${ICON.plus}Who bowled here</button>` : ''}
       </section>`;
     })
     .join('')}</div>`;
 }
 
-function formatToggle(format) {
+function formatToggle(format, action = 'format') {
   return `<div class="seg" role="group" aria-label="Game format">
-    <button type="button" data-action="format" data-format="regular" aria-pressed="${format === 'regular'}">Regular</button>
-    <button type="button" data-action="format" data-format="pairs" aria-pressed="${format === 'pairs'}">Pairs <small>½ game</small></button>
+    <button type="button" data-action="${action}" data-format="regular" aria-pressed="${format === 'regular'}">Regular</button>
+    <button type="button" data-action="${action}" data-format="pairs" aria-pressed="${format === 'pairs'}">Pairs <small>½ game</small></button>
   </div>`;
 }
 
@@ -234,7 +279,50 @@ function issueNotices(issues) {
     .join('');
 }
 
+function matchList() {
+  const rows = state.matches.map((m) => {
+    const count = m.lanes.reduce((a, l) => a + l.people.length, 0);
+    const nums = m.lanes.map((l) => l.num).join(', ');
+    return `<li><button type="button" class="match-row" data-action="edit-match" data-id="${esc(m.id)}">
+      <span><b>Match ${m.n}</b>${m.format === 'pairs' ? ' · Pairs' : ''}<span class="dim"> · ${count} bowling${nums ? ` · lane${m.lanes.length === 1 ? '' : 's'} ${esc(nums)}` : ''}</span></span>
+      <span class="right">Edit</span>
+    </button></li>`;
+  });
+  return `${rows.length ? `<h2 class="section-label">Matches so far<span>tap one to fix it</span></h2><ul class="list">${rows.join('')}</ul>` : ''}
+    <button type="button" class="link-btn" data-action="record">Record a match by hand</button>`;
+}
+
+function viewEditMatch(m) {
+  const idx = state.matches.indexOf(m);
+  const latest = idx === state.matches.length - 1;
+  const pairs = m.format === 'pairs';
+  const r = reviewMatch({ lanes: m.lanes, people: state.people, matches: state.matches.slice(0, idx), never: state.never, rules: state.rules });
+  const count = m.lanes.reduce((a, l) => a + l.people.length, 0);
+  const lanes = editorLanes(m).map((slot) => m.lanes.find((l) => l.laneId === slot.laneId) || { ...slot, people: [], ...(pairs ? { groups: [] } : {}) });
+  const inMatch = new Set(m.lanes.flatMap((l) => l.people));
+  const missing = latest ? here().filter((x) => !inMatch.has(x.id)) : [];
+  return `
+    <button type="button" class="back" data-action="close-edit">${ICON.back}Match</button>
+    <header class="head">
+      <div class="head-row"><span class="eyebrow">Turkey Turkey</span><span class="pill">Editing</span></div>
+      <h1>Match ${m.n}${pairs ? ' · Pairs' : ''}</h1>
+      <p class="sub">${count} bowling · ${m.lanes.length} lane${m.lanes.length === 1 ? '' : 's'}${pairs ? ' · ½ game each' : ''}</p>
+    </header>
+    <div class="notice">${ICON.info}<span>Set this to what actually happened. Game tallies, the bill and the next shuffles all go by it.${pairs ? ' Partners pair up in the order you tick them; tap a name to swap partners.' : ''}</span></div>
+    ${formatToggle(m.format, 'edit-format')}
+    ${missing.length ? `<div class="notice">${ICON.info}<span>${esc(list(missing.map((x) => x.name)))} ${missing.length === 1 ? 'is' : 'are'} checked in but not on a lane.</span></div>` : ''}
+    ${laneCards(lanes, { format: m.format, buddies: r.buddyFor, addable: true })}
+    ${activeLanes().length ? '' : `<div class="notice warn">${ICON.warn}<span>Turn on the lanes you used in Setup.</span></div>`}
+    <button type="button" class="btn primary" data-action="close-edit">Done</button>
+    <button type="button" class="link-btn danger" data-action="delete-match">Delete match ${m.n}</button>`;
+}
+
 function viewMatch() {
+  if (ui.editId) {
+    const m = state.matches.find((x) => x.id === ui.editId);
+    if (m) return viewEditMatch(m);
+    ui.editId = null;
+  }
   const n = state.matches.length;
   const current = state.matches[n - 1];
   const p = state.preview;
@@ -249,6 +337,7 @@ function viewMatch() {
     const count = p.lanes.reduce((a, l) => a + l.people.length, 0);
     const sizes = p.lanes.map((l) => l.people.length).join(' · ');
     const stale = people.map((x) => x.id).sort().join() !== (p.dealtFor || []).join();
+    const edited = p.historySig != null && p.historySig !== historySignature(state.matches);
     return `
       <header class="head">
         ${headerPill('Up next')}
@@ -257,7 +346,7 @@ function viewMatch() {
         <p class="sub">${r.firstTime} first-time matchup${r.firstTime === 1 ? '' : 's'} · ${r.repeatLanes ? `${r.repeatLanes} on the same lane again` : 'nobody repeats a lane'}</p>
       </header>
       ${formatToggle(p.format)}
-      ${stale ? `<div class="notice">${ICON.info}<span>Check-ins changed since this was dealt.</span><button type="button" data-action="deal">Reshuffle</button></div>` : ''}
+      ${stale || edited ? `<div class="notice">${ICON.info}<span>${stale && edited ? 'Check-ins and earlier matches' : stale ? 'Check-ins' : 'Earlier matches'} changed since this was dealt.</span><button type="button" data-action="deal">Reshuffle</button></div>` : ''}
       ${p.format === 'pairs' ? `<div class="notice">${ICON.info}<span>First name throws ball one, partner throws ball two. Strike? Partner leads the next frame. Counts as ½ game.</span></div>` : ''}
       ${issueNotices(r.issues)}
       ${laneCards(p.lanes, { format: p.format, meta, buddies: r.buddyFor })}
@@ -265,7 +354,8 @@ function viewMatch() {
         <button type="button" class="btn" data-action="deal">${ICON.shuffle}Reshuffle</button>
         <button type="button" class="btn primary" data-action="start">Start match ${n + 1}</button>
       </div>
-      <p class="note" style="text-align:center">Tap a name to swap, move or sit someone out.</p>`;
+      <p class="note" style="text-align:center">Tap a name to swap, move or sit someone out.</p>
+      ${matchList()}`;
   }
 
   if (current) {
@@ -282,7 +372,8 @@ function viewMatch() {
       ${laneCards(current.lanes, { format: current.format, buddies: r.buddyFor })}
       ${formatToggle(state.nextFormat)}
       <button type="button" class="btn primary" data-action="deal">${ICON.shuffle}Deal match ${current.n + 1}</button>
-      <button type="button" class="link-btn" data-action="undo-start">Undo starting match ${current.n}</button>`;
+      <button type="button" class="link-btn" data-action="undo-start">Undo starting match ${current.n}</button>
+      ${matchList()}`;
   }
 
   const people = here();
@@ -297,7 +388,8 @@ function viewMatch() {
       ${people.length ? '' : '<button type="button" class="btn small" data-action="tab" data-tab="people">Go to People</button>'}
     </div>
     ${formatToggle(state.nextFormat)}
-    <button type="button" class="btn primary" data-action="deal" ${people.length ? '' : 'disabled'}>${ICON.shuffle}Deal match 1</button>`;
+    <button type="button" class="btn primary" data-action="deal" ${people.length ? '' : 'disabled'}>${ICON.shuffle}Deal match 1</button>
+    <button type="button" class="link-btn" data-action="record">Match 1 started without the app? Record it</button>`;
 }
 
 function viewPeople() {
@@ -547,16 +639,17 @@ function viewSheet() {
   const s = ui.sheet;
   let body = '';
   if (s.type === 'person') {
-    const lanes = editableLanes() || [];
+    const t = editTarget();
+    const lanes = t?.obj.lanes || [];
     const lane = lanes.find((l) => l.people.includes(s.id));
-    const isPreview = !!state.preview;
-    const format = isPreview ? state.preview.format : state.matches[state.matches.length - 1]?.format;
-    const others = activeLanes().filter((l) => l.id !== lane?.laneId);
+    const isPreview = t?.kind === 'preview';
+    const where = t?.kind === 'edit' ? `match ${t.obj.n}` : isPreview ? 'up next' : 'bowling now';
+    const others = laneSlots(t).filter((l) => l.laneId !== lane?.laneId);
     body = `
       <h2>${esc(nameOf(s.id))}</h2>
-      <p class="sub">${lane ? `Lane ${esc(lane.num)} · ${isPreview ? 'up next' : 'bowling now'}` : ''}</p>
+      <p class="sub">${lane ? `Lane ${esc(lane.num)} · ${where}` : ''}</p>
       <button type="button" class="opt" data-action="sheet-swap" data-id="${esc(s.id)}">${ICON.swap}Swap with someone…</button>
-      ${format !== 'pairs' ? others.map((l) => `<button type="button" class="opt" data-action="move" data-id="${esc(s.id)}" data-lane="${esc(l.id)}">${ICON.arrow}Move to lane ${esc(l.num)}<span class="right">${lanes.find((x) => x.laneId === l.id)?.people.length ?? 0} there</span></button>`).join('') : ''}
+      ${t?.obj.format !== 'pairs' ? others.map((l) => `<button type="button" class="opt" data-action="move" data-id="${esc(s.id)}" data-lane="${esc(l.laneId)}">${ICON.arrow}Move to lane ${esc(l.num)}<span class="right">${lanes.find((x) => x.laneId === l.laneId)?.people.length ?? 0} there</span></button>`).join('') : ''}
       <button type="button" class="opt" data-action="open-person" data-id="${esc(s.id)}">${ICON.user}Open profile</button>
       <button type="button" class="opt danger" data-action="sit-out" data-id="${esc(s.id)}">${ICON.out}${isPreview ? 'Sit out this match' : 'Remove from this match'}</button>`;
   } else if (s.type === 'swap') {
@@ -592,6 +685,27 @@ function viewSheet() {
       <button type="button" class="btn primary" data-action="set-shoes" data-id="${esc(s.id)}" data-val="yes">Rented shoes</button>
       <button type="button" class="btn" data-action="set-shoes" data-id="${esc(s.id)}" data-val="no">Brought their own</button>
       <button type="button" class="link-btn" data-action="set-shoes" data-id="${esc(s.id)}" data-val="">Not sure yet</button>`;
+  } else if (s.type === 'lane') {
+    const m = editTarget()?.obj;
+    const slot = m && editorLanes(m).find((l) => l.laneId === s.laneId);
+    if (!slot) return '';
+    const latest = m === state.matches[state.matches.length - 1];
+    const laneOf = (id) => m.lanes.find((l) => l.people.includes(id));
+    const pick = (x) => {
+      const l = laneOf(x.id);
+      const on = l?.laneId === s.laneId;
+      return `<button type="button" class="pick" aria-pressed="${on}" data-action="lane-pick" data-id="${esc(x.id)}"><span>${esc(x.name)}${l && !on ? ` <small>lane ${esc(l.num)}</small>` : ''}</span>${ICON.tick}</button>`;
+    };
+    const sorted = [...state.people].sort(byName);
+    const hereList = sorted.filter((x) => x.here);
+    const away = sorted.filter((x) => !x.here);
+    body = `<h2>Who bowled lane ${esc(slot.num)}?</h2>
+      <p class="sub">Match ${m.n}. Tap to add or take off; anyone on another lane moves here.</p>
+      ${away.length && hereList.length ? '<h3 class="group-label">Checked in</h3>' : ''}
+      ${hereList.length ? `<div class="pick-list">${hereList.map(pick).join('')}</div>` : ''}
+      ${away.length ? `<h3 class="group-label">Not checked in${latest ? ' · adding checks them in' : ''}</h3><div class="pick-list">${away.map(pick).join('')}</div>` : ''}
+      ${state.people.length ? '' : '<p class="sub">Add people on the People tab first.</p>'}
+      <button type="button" class="btn primary" data-action="close-sheet">Done</button>`;
   } else if (s.type === 'late') {
     const current = state.matches[state.matches.length - 1];
     const inMatch = new Set(current.lanes.flatMap((l) => l.people));
@@ -621,6 +735,7 @@ const actions = {
     render();
   },
   tab(el) {
+    if (ui.editId && el.dataset.tab !== 'match') closeEdit();
     ui.tab = el.dataset.tab;
     ui.sheet = null;
     if (ui.tab !== 'people') ui.personId = null;
@@ -630,6 +745,39 @@ const actions = {
   deal: () => deal(state.preview?.format ?? state.nextFormat),
   start: startMatch,
   'undo-start': undoStart,
+  record: recordMatch,
+  'edit-match': (el) => openEdit(el.dataset.id),
+  'close-edit': closeEdit,
+  'delete-match': deleteMatch,
+  'edit-format'(el) {
+    const f = el.dataset.format;
+    commit((s) => {
+      const m = s.matches.find((x) => x.id === ui.editId);
+      if (!m || m.format === f) return;
+      m.format = f;
+      m.lanes = convertFormat(m.lanes, f);
+    });
+  },
+  'sheet-lane'(el) {
+    ui.sheet = { type: 'lane', laneId: el.dataset.lane };
+    render();
+  },
+  'lane-pick'(el) {
+    const id = el.dataset.id;
+    const laneId = ui.sheet?.laneId;
+    commit((s) => {
+      const t = editTarget(s);
+      if (!t || t.kind !== 'edit') return;
+      const m = t.obj;
+      const slot = editorLanes(m).find((l) => l.laneId === laneId);
+      if (!slot) return;
+      const on = m.lanes.some((l) => l.laneId === laneId && l.people.includes(id));
+      m.lanes = (on ? removeFromLanes(m.lanes, id) : placeOnLane(m.lanes, id, slot, m.format === 'pairs')).filter((l) => l.people.length);
+      // Someone on the latest match is clearly here tonight.
+      const p = s.people.find((x) => x.id === id);
+      if (!on && p && m === s.matches[s.matches.length - 1]) p.here = true;
+    });
+  },
   format(el) {
     const f = el.dataset.format;
     if (state.preview) deal(f);

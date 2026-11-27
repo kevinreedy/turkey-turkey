@@ -12,6 +12,7 @@ A one-phone web app for Thanksgiving bowling. It shuffles everyone onto lanes fo
 - **Looks after newcomers.** Mark someone as a newcomer, pick who they know, and they'll bowl with one of those people for their first 2 games (the number is adjustable). In the game after that, they'll share a lane with at least one, ideally two, people they've already bowled with, before mixing in fully.
 - **Pairs games.** Every lane gets an even number of bowlers so everyone has a partner. With an odd head count, one group becomes a trio. Pairs games count as ½ game on the bill.
 - **People come and go.** Check people in and out on the People tab. Add someone to a match that's already going, swap or move anyone, or sit someone out.
+- **Fix a match by hand.** If a match started without the app (say you were running late), tap **Record it** under *Deal match 1* (or **Record a match by hand** later on) and tick who bowled on each lane. Any match can be opened from **Matches so far** to set it to what actually happened: move or swap people, change the format, or delete it. Game tallies, the bill, newcomer buddy games and the next shuffles all go by the corrected matches; an "up next" deal says so if earlier matches changed and offers a reshuffle.
 - **Shoes.** When you add someone, the app asks whether they rented shoes. You can change it later on their profile or in the Settle table.
 - **Settle up.** Enter three amounts: the shoe price per person (defaults to $4), what you paid for lanes, and the tip. A receipt-style total lets you check them against the real bill.
   - Lanes + tip are split by games bowled (a pairs game counts as ½), so the tip goes on games, not shoes.
@@ -48,6 +49,7 @@ npm test    # node --test: dealing rules, cost split, backups
 
 - `js/engine.js` — pure logic: lane sizes, the dealer (simulated annealing over swaps, scored by the rules below), game totals and bill split.
 - `js/store.js` — localStorage, backups, new night.
+- `js/lineup.js` — pure helpers for editing a lineup by hand (move, swap, switch format, renumber).
 - `js/app.js` — the UI (vanilla JS, no framework).
 - `sw.js` — offline support (network first, cache fallback).
 - `tools/make-icons.mjs` — regenerates the PNG icons.

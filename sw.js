@@ -1,7 +1,7 @@
 // Network first, cache as fallback: always the latest version when online,
 // still opens at the bowling alley when the Wi-Fi is bad.
-const CACHE = 'turkey-turkey-v1';
-const ASSETS = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/engine.js', 'js/store.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png'];
+const CACHE = 'turkey-turkey-v2';
+const ASSETS = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/engine.js', 'js/store.js', 'js/lineup.js', 'js/bulk-people.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
