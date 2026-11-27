@@ -96,6 +96,8 @@ h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 36px; 
 .seg button small { font-size: 12px; font-weight: 500; color: var(--muted); }
 .seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 .seg button[aria-pressed="true"] small { color: #5a4e43; }
+.seg.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.round-seg { margin: 0 14px 12px; }
 
 /* Notices */
 .notice { display: flex; gap: 10px; align-items: flex-start; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.4; color: var(--text-2); }

@@ -514,6 +514,7 @@ function viewPerson() {
 function costSplit() {
   const c = state.costs;
   return settle(state.matches, {
+    roundTo: c.round || 1,
     lanes: parseMoney(c.lanes),
     tip: parseMoney(c.tip),
     shoePrice: parseMoney(c.shoePrice),
@@ -522,6 +523,9 @@ function costSplit() {
 }
 
 const dollars = (x) => `$${Math.round(x)}`;
+/** How a share is shown with the current rounding: $8 for whole dollars, $8.50 for 50¢. */
+const shown = (x, round) => (round === 1 ? dollars(x) : money(x));
+const ROUND_LABEL = { 0.5: 'rounded to the nearest 50¢', 1: 'rounded to the dollar' };
 
 function viewSettle() {
   const s = costSplit();
@@ -564,18 +568,20 @@ function viewSettle() {
     ${
       rows.length
         ? `<ul class="list"><li><div class="setting">
-      <span class="label"><span id="round-lbl">Round to nearest dollar</span><span>${anyMoney ? (round ? `Collects ${money(collected)}${diff ? ` · ${money(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than paid` : ' · exactly what was paid'}` : `Collects exactly ${money(collected)}`) : 'For each person’s total'}</span></span>
-      <button type="button" class="switch" role="switch" aria-checked="${round}" aria-labelledby="round-lbl" data-action="round-toggle"></button>
+      <span class="label"><span id="round-lbl">Round each total</span><span>${anyMoney ? (round ? `Collects ${money(collected)}${diff ? ` · ${money(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than paid` : ' · exactly what was paid'}` : `Collects exactly ${money(collected)}`) : 'For each person’s total'}</span></span>
+    </div>
+    <div class="seg three round-seg" role="group" aria-labelledby="round-lbl">
+      ${[[0, 'Exact'], [0.5, 'To 50¢'], [1, 'To $1']].map(([v, label]) => `<button type="button" data-action="round" data-val="${v}" aria-pressed="${round === v}">${label}</button>`).join('')}
     </div></li></ul>
     <div class="table-wrap"><table>
       <thead><tr><th scope="col">Bowler</th><th scope="col">Games</th><th scope="col">Shoes</th><th scope="col">Owes</th></tr></thead>
       <tbody>${rows
         .map(
           (r) => `<tr><th scope="row">${esc(r.p?.name ?? 'Someone removed')}${r.p && !r.p.here ? ' <span class="left-tag">· left</span>' : ''}</th>
-        <td>${games(r.units)}</td><td>${r.p ? shoeCell(r) : '—'}</td><td>${anyMoney ? (round ? dollars(r.owes) : money(r.owes)) : '—'}</td></tr>`
+        <td>${games(r.units)}</td><td>${r.p ? shoeCell(r) : '—'}</td><td>${anyMoney ? (round ? shown(r.rounded, round) : money(r.owes)) : '—'}</td></tr>`
         )
         .join('')}</tbody>
-      ${anyMoney ? `<tfoot><tr><th scope="row">Total</th><td>${games(s.totalUnits)}</td><td>${s.shoeCount}</td><td>${round ? dollars(collected) : money(collected)}</td></tr></tfoot>` : ''}
+      ${anyMoney ? `<tfoot><tr><th scope="row">Total</th><td>${games(s.totalUnits)}</td><td>${s.shoeCount}</td><td>${round ? shown(collected, round) : money(collected)}</td></tr></tfoot>` : ''}
     </table></div>
     <button type="button" class="btn primary" data-action="share-summary">${ICON.copy}Share summary</button>`
         : '<div class="empty"><p>No games bowled yet. Tallies show up here as soon as the first match starts.</p></div>'
@@ -916,8 +922,8 @@ const actions = {
       p.shoes = p.shoes === true ? false : true;
     });
   },
-  'round-toggle'() {
-    commit((s) => (s.costs.round = !s.costs.round));
+  round(el) {
+    commit((s) => (s.costs.round = Number(el.dataset.val)));
   },
   'rule-repeat'() {
     commit((s) => (s.rules.avoidRepeatLane = !s.rules.avoidRepeatLane));
@@ -978,7 +984,7 @@ const actions = {
 function summaryText() {
   const s = costSplit();
   const round = state.costs.round;
-  const fmt = (x) => (round ? dollars(x) : money(x));
+  const fmt = (r) => (round ? shown(r.rounded, round) : money(r.owes));
   const lines = [`${state.night.name} bowling`];
   if (s.total > 0) {
     lines.push(`Lanes ${money(s.lanes)} + tip ${money(s.tip)} = ${money(s.lanes + s.tip)} over ${games(s.totalUnits)} games (${money(s.perGame)}/game)`);
@@ -989,11 +995,11 @@ function summaryText() {
   const rows = s.rows.map((r) => ({ ...r, name: nameOf(r.id) })).sort((a, b) => a.name.localeCompare(b.name));
   for (const r of rows) {
     const detail = `${games(r.units)} game${r.units === 1 ? '' : 's'}${r.rentedShoes ? ' + shoes' : ''}`;
-    lines.push(s.total > 0 ? `${r.name}: ${fmt(r.owes)} (${detail})` : `${r.name}: ${detail}`);
+    lines.push(s.total > 0 ? `${r.name}: ${fmt(r)} (${detail})` : `${r.name}: ${detail}`);
   }
   const notes = [];
   if (state.matches.some((m) => m.format === 'pairs')) notes.push('pairs games count as ½');
-  if (round && s.total > 0) notes.push('rounded to the dollar');
+  if (round && s.total > 0) notes.push(ROUND_LABEL[round]);
   if (notes.length) lines.push('', `(${notes.join('; ')})`);
   return lines.join('\n');
 }

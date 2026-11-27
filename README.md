@@ -18,7 +18,7 @@ A one-phone web app for Thanksgiving bowling. It shuffles everyone onto lanes fo
   - Lanes + tip are split by games bowled (a pairs game counts as ½), so the tip goes on games, not shoes.
   - Each person who rented shoes adds the shoe price.
   - Shares add up to exactly what was paid, down to the cent.
-  - The **Round to nearest dollar** switch rounds each person's total and shows how far the rounded total is from what was paid.
+  - **Round each total** rounds each person's share to the nearest 50¢ or the nearest dollar (or leaves it exact), and shows how far the rounded total is from what was paid.
   - **Share summary** sends the breakdown to the group chat.
 - **Flexible lanes.** Use 1 to 6+ lanes with your own numbers (e.g. 17–20), and turn them on or off during the night.
 

@@ -204,6 +204,17 @@ test('rounding to the dollar', () => {
   assert.equal(s.total, 29.5);
 });
 
+test('rounding to the nearest 50¢', () => {
+  const lanes = [{ num: '1', people: ['a', 'b', 'c'] }];
+  const s = settle([{ format: 'regular', lanes }], { lanes: 20, tip: 5, shoePrice: 4.5, renters: ['a'], roundTo: 0.5 });
+  // 8.33 → 8.50, 8.34 → 8.50, a: 8.33 + 4.50 = 12.83 → 13.00
+  assert.deepEqual(s.rows.map((r) => r.rounded).sort((x, y) => x - y), [8.5, 8.5, 13]);
+  assert.equal(s.roundedTotal, 30);
+  // Halfway rounds up, and quarters land on the right side.
+  const one = (amount) => settle([{ format: 'regular', lanes: [{ num: '1', people: ['a'] }] }], { lanes: amount, roundTo: 0.5 }).rows[0].rounded;
+  assert.deepEqual([10.24, 10.25, 10.74, 10.75, 10.5, 10].map(one), [10, 10.5, 10.5, 11, 10.5, 10]);
+});
+
 test('shares always add up to exactly what was paid', () => {
   const lanes = [{ num: '1', people: ['a', 'b', 'c'] }, { num: '2', people: ['d', 'e', 'f', 'g'] }];
   const matches = [{ format: 'regular', lanes }, { format: 'pairs', lanes }, { format: 'regular', lanes: [lanes[0]] }];
