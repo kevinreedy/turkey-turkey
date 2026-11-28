@@ -438,6 +438,41 @@ export function settle(matches, { lanes = 0, tip = 0, shoePrice = 0, renters = [
   };
 }
 
+/**
+ * Who has paid against their current share. A share can change after someone
+ * pays (another game, a corrected bill, different rounding), so what they paid
+ * is kept as an amount and compared with what they owe now.
+ *
+ * @param {object[]} rows  `settle(...).rows`
+ * @param {Record<string, number|null>} paid  person id -> dollars paid (missing/null = not yet)
+ * @param {number} roundTo  0 for exact shares, else the rounding step in use
+ * @returns {{byId: Record<string, {due:number, paid:number|null, left:number, status:'unpaid'|'paid'|'short'|'over'}>,
+ *   due:number, collected:number, outstanding:number, refunds:number, paidCount:number, count:number}}
+ *   `left` > 0 still owes that much more; < 0 is owed that much back.
+ */
+export function collection(rows, paid = {}, roundTo = 0) {
+  const byId = {};
+  let due = 0;
+  let collected = 0;
+  let outstanding = 0;
+  let refunds = 0;
+  let paidCount = 0;
+  for (const r of rows) {
+    const dueCents = Math.round((roundTo ? r.rounded : r.owes) * 100);
+    const p = paid[r.id];
+    const paidCents = p == null ? null : Math.round(p * 100);
+    const leftCents = dueCents - (paidCents ?? 0);
+    const status = paidCents == null ? 'unpaid' : leftCents === 0 ? 'paid' : leftCents > 0 ? 'short' : 'over';
+    byId[r.id] = { due: dueCents / 100, paid: paidCents == null ? null : paidCents / 100, left: leftCents / 100, status };
+    due += dueCents;
+    collected += paidCents ?? 0;
+    if (leftCents > 0) outstanding += leftCents;
+    else refunds -= leftCents;
+    if (status === 'paid') paidCount++;
+  }
+  return { byId, due: due / 100, collected: collected / 100, outstanding: outstanding / 100, refunds: refunds / 100, paidCount, count: rows.length };
+}
+
 /** Small seeded RNG for tests and reproducible deals. */
 export function mulberry32(seed) {
   let a = seed >>> 0;

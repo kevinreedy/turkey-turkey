@@ -19,7 +19,8 @@ A one-phone web app for Thanksgiving bowling. It shuffles everyone onto lanes fo
   - Each person who rented shoes adds the shoe price.
   - Shares add up to exactly what was paid, down to the cent.
   - **Round each total** rounds each person's share to the nearest 50¢ or the nearest dollar (or leaves it exact), and shows how far the rounded total is from what was paid.
-  - **Share summary** sends the breakdown to the group chat.
+  - **Mark people as paid.** Tap what someone owes and choose **Paid**. A progress bar shows how much is collected and who still has to pay. If a share changes after someone paid (another game, a corrected bill, different rounding), their row shows how much is left to pay or to give back.
+  - **Share summary** sends the breakdown to the group chat, including who has paid.
 - **Flexible lanes.** Use 1 to 6+ lanes with your own numbers (e.g. 17–20), and turn them on or off during the night.
 
 ## Where the data lives (free, no account)
@@ -28,7 +29,7 @@ Everything is saved in the phone's browser storage (`localStorage`). Nothing is 
 
 - **Add it to your Home Screen** (Safari → Share → Add to Home Screen). It then opens full screen, works with bad bowling-alley Wi-Fi, and Safari won't clear its data for going unused.
 - Use **Setup → Back up** to save a `.json` file to Files or AirDrop it to yourself, and **Restore** to load it back.
-- **Setup → Start a new night** keeps your people, who-knows-who and never-together pairs for next year, and clears games, check-ins, shoe rentals and the amounts paid.
+- **Setup → Start a new night** keeps your people, who-knows-who and never-together pairs for next year, and clears games, check-ins, shoe rentals, who’s paid and the amounts paid.
 
 > This repo is public if you host it on GitHub Pages's free plan, so the roster is deliberately **not** stored in the repo. Names and never-together pairs stay on your phone.
 

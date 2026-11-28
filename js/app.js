@@ -1,4 +1,4 @@
-import { dealMatch, reviewMatch, previousLanes, gameTotals, settle } from './engine.js';
+import { dealMatch, reviewMatch, previousLanes, gameTotals, settle, collection } from './engine.js';
 import { load, save, newId, backupBlob, backupFilename, parseBackup, freshNight, requestPersistence, lastSaveFailed } from './store.js';
 import { prepareBulkPeople, resetBulkEntry } from './bulk-people.js';
 import { removeFromLanes, placeOnLane, swapInLanes, convertFormat, renumber, historySignature } from './lineup.js';
@@ -522,6 +522,11 @@ function costSplit() {
   });
 }
 
+/** Who has paid against the shares as currently shown (rounded or exact). */
+function payments(s = costSplit()) {
+  return collection(s.rows, Object.fromEntries(state.people.map((p) => [p.id, p.paid])), state.costs.round);
+}
+
 const dollars = (x) => `$${Math.round(x)}`;
 /** How a share is shown with the current rounding: $8 for whole dollars, $8.50 for 50¢. */
 const shown = (x, round) => (round === 1 ? dollars(x) : money(x));
@@ -536,6 +541,19 @@ function viewSettle() {
   const unknownShoes = rows.filter((r) => r.p && r.p.shoes == null).map((r) => r.p.name);
   const collected = round ? s.roundedTotal : s.exactTotal;
   const diff = Math.round((collected - s.total) * 100) / 100;
+  const pay = payments(s);
+  const anyPaid = rows.some((r) => r.p?.paid != null);
+  const stillOwe = rows.filter((r) => pay.byId[r.id].left > 0 && r.p).map((r) => r.p.name);
+  const giveBack = rows.filter((r) => pay.byId[r.id].left < 0 && r.p).map((r) => `${r.p.name} ${money(-pay.byId[r.id].left)}`);
+  const oweCell = (r) => {
+    const st = pay.byId[r.id];
+    const amount = round ? shown(st.due, round) : money(st.due);
+    if (!r.p) return amount;
+    const note = st.status === 'paid' ? 'Paid' : st.status === 'short' ? `${money(st.left)} left` : st.status === 'over' ? `${money(-st.left)} back` : '';
+    const label = st.status === 'unpaid' ? 'not paid yet' : st.status === 'paid' ? 'paid' : note;
+    return `<button type="button" class="owe-btn ${st.status}" data-action="sheet-paid" data-id="${esc(r.id)}" aria-label="${esc(r.p.name)} owes ${amount}, ${label}. Tap to change">
+      <span class="amt">${amount}</span>${st.status === 'unpaid' ? ICON.circle : ICON.check}${note ? `<span class="st">${note}</span>` : ''}</button>`;
+  };
   const moneyField = (field, label, placeholder) => `<li><div class="money-row">
       <label for="cost-${field}">${label}</label>
       <span class="money-input"><span aria-hidden="true">$</span><input id="cost-${field}" data-key="cost-${field}" data-action="cost" data-field="${field}" type="text" inputmode="decimal" placeholder="${placeholder}" value="${esc(state.costs[field])}" autocomplete="off"></span>
@@ -573,12 +591,22 @@ function viewSettle() {
     <div class="seg three round-seg" role="group" aria-labelledby="round-lbl">
       ${[[0, 'Exact'], [0.5, 'To 50¢'], [1, 'To $1']].map(([v, label]) => `<button type="button" data-action="round" data-val="${v}" aria-pressed="${round === v}">${label}</button>`).join('')}
     </div></li></ul>
+    ${
+      anyMoney
+        ? `<section class="collect" aria-label="Collected so far">
+      <div class="collect-head"><span>Collected <b>${money(pay.collected)}</b> of ${money(pay.due)}</span><span>${pay.paidCount} of ${pay.count} paid</span></div>
+      <div class="bar" aria-hidden="true"><span style="width:${pay.due ? Math.min(100, (pay.collected / pay.due) * 100) : 0}%"></span></div>
+      <p>${anyPaid ? (stillOwe.length ? `Still to pay: ${esc(list(stillOwe))}.` : 'Everyone has paid.') : 'Tap what someone owes to mark them as paid.'}</p>
+    </section>
+    ${giveBack.length ? `<div class="notice warn">${ICON.warn}<span>Shares went down after paying. Give back: ${esc(list(giveBack))}.</span></div>` : ''}`
+        : ''
+    }
     <div class="table-wrap"><table>
       <thead><tr><th scope="col">Bowler</th><th scope="col">Games</th><th scope="col">Shoes</th><th scope="col">Owes</th></tr></thead>
       <tbody>${rows
         .map(
           (r) => `<tr><th scope="row">${esc(r.p?.name ?? 'Someone removed')}${r.p && !r.p.here ? ' <span class="left-tag">· left</span>' : ''}</th>
-        <td>${games(r.units)}</td><td>${r.p ? shoeCell(r) : '—'}</td><td>${anyMoney ? (round ? shown(r.rounded, round) : money(r.owes)) : '—'}</td></tr>`
+        <td>${games(r.units)}</td><td>${r.p ? shoeCell(r) : '—'}</td><td>${anyMoney ? oweCell(r) : '—'}</td></tr>`
         )
         .join('')}</tbody>
       ${anyMoney ? `<tfoot><tr><th scope="row">Total</th><td>${games(s.totalUnits)}</td><td>${s.shoeCount}</td><td>${round ? shown(collected, round) : money(collected)}</td></tr></tfoot>` : ''}
@@ -636,7 +664,7 @@ function viewSetup() {
     </div>
     <p class="note">Everything stays in this browser. Add the app to your Home Screen so Safari keeps it, and back up before clearing Safari data or switching phones.</p>
     <button type="button" class="btn small danger" data-action="new-night">Start a new night</button>
-    <p class="note">Keeps your people, who-knows-who and never-together pairs. Clears games, check-ins, shoe rentals and the amounts paid.</p>`;
+    <p class="note">Keeps your people, who-knows-who and never-together pairs. Clears games, check-ins, shoe rentals, who’s paid and the amounts paid.</p>`;
 }
 
 /* ---------- sheets ---------- */
@@ -691,6 +719,22 @@ function viewSheet() {
       <button type="button" class="btn primary" data-action="set-shoes" data-id="${esc(s.id)}" data-val="yes">Rented shoes</button>
       <button type="button" class="btn" data-action="set-shoes" data-id="${esc(s.id)}" data-val="no">Brought their own</button>
       <button type="button" class="link-btn" data-action="set-shoes" data-id="${esc(s.id)}" data-val="">Not sure yet</button>`;
+  } else if (s.type === 'paid') {
+    const p = person(s.id);
+    const st = payments().byId[s.id];
+    if (!p || !st) return '';
+    const amt = (x) => (state.costs.round ? shown(x, state.costs.round) : money(x));
+    const sub =
+      st.status === 'unpaid' ? 'Not paid yet.'
+      : st.status === 'paid' ? 'Paid in full.'
+      : st.status === 'short' ? `Paid ${money(st.paid)}, but their share has gone up since. ${money(st.left)} left to pay.`
+      : `Paid ${money(st.paid)}, but their share has gone down since. Give them ${money(-st.left)} back.`;
+    const primary = st.status === 'unpaid' ? `Paid ${amt(st.due)}` : st.status === 'short' ? `Paid the other ${money(st.left)}` : st.status === 'over' ? `Gave back ${money(-st.left)}` : '';
+    body = `<h2>${esc(p.name)} owes ${amt(st.due)}</h2>
+      <p class="sub">${sub}</p>
+      ${primary ? `<button type="button" class="btn primary" data-action="set-paid" data-id="${esc(p.id)}" data-val="${st.due}">${primary}</button>` : ''}
+      ${st.status !== 'unpaid' ? `<button type="button" class="btn" data-action="set-paid" data-id="${esc(p.id)}" data-val="">Not paid yet</button>` : ''}
+      <button type="button" class="link-btn" data-action="close-sheet">Cancel</button>`;
   } else if (s.type === 'lane') {
     const m = editTarget()?.obj;
     const slot = m && editorLanes(m).find((l) => l.laneId === s.laneId);
@@ -916,6 +960,15 @@ const actions = {
     commit((s) => (s.people.find((p) => p.id === id).shoes = v));
     if (wasNew) toast(`${nameOf(id)} added and checked in`);
   },
+  'sheet-paid'(el) {
+    ui.sheet = { type: 'paid', id: el.dataset.id };
+    render();
+  },
+  'set-paid'(el) {
+    const v = el.dataset.val === '' ? null : Number(el.dataset.val);
+    ui.sheet = null;
+    commit((s) => (s.people.find((p) => p.id === el.dataset.id).paid = v));
+  },
   'shoe-toggle'(el) {
     commit((s) => {
       const p = s.people.find((x) => x.id === el.dataset.id);
@@ -954,7 +1007,7 @@ const actions = {
     $restore.click();
   },
   'new-night'() {
-    if (!confirm('Start a new night? Games, check-ins, shoe rentals and the amounts paid are cleared. People, who-knows-who and never-together pairs stay. Back up first if you want a record.')) return;
+    if (!confirm('Start a new night? Games, check-ins, shoe rentals, who’s paid and the amounts paid are cleared. People, who-knows-who and never-together pairs stay. Back up first if you want a record.')) return;
     state = freshNight(state);
     save(state);
     ui.tab = 'people';
@@ -985,6 +1038,14 @@ function summaryText() {
   const s = costSplit();
   const round = state.costs.round;
   const fmt = (r) => (round ? shown(r.rounded, round) : money(r.owes));
+  const pay = payments(s);
+  const anyPaid = s.rows.some((r) => person(r.id)?.paid != null);
+  const paidNote = (r) => {
+    const st = pay.byId[r.id];
+    if (!anyPaid || st.status === 'unpaid') return '';
+    if (st.status === 'paid') return ' ✓ paid';
+    return st.status === 'short' ? ` · paid ${money(st.paid)}, ${money(st.left)} left` : ` · paid ${money(st.paid)}, ${money(-st.left)} back`;
+  };
   const lines = [`${state.night.name} bowling`];
   if (s.total > 0) {
     lines.push(`Lanes ${money(s.lanes)} + tip ${money(s.tip)} = ${money(s.lanes + s.tip)} over ${games(s.totalUnits)} games (${money(s.perGame)}/game)`);
@@ -995,8 +1056,9 @@ function summaryText() {
   const rows = s.rows.map((r) => ({ ...r, name: nameOf(r.id) })).sort((a, b) => a.name.localeCompare(b.name));
   for (const r of rows) {
     const detail = `${games(r.units)} game${r.units === 1 ? '' : 's'}${r.rentedShoes ? ' + shoes' : ''}`;
-    lines.push(s.total > 0 ? `${r.name}: ${fmt(r)} (${detail})` : `${r.name}: ${detail}`);
+    lines.push(s.total > 0 ? `${r.name}: ${fmt(r)} (${detail})${paidNote(r)}` : `${r.name}: ${detail}`);
   }
+  if (anyPaid && s.total > 0) lines.push('', `Collected ${money(pay.collected)} of ${money(pay.due)} · ${pay.paidCount} of ${pay.count} paid`);
   const notes = [];
   if (state.matches.some((m) => m.format === 'pairs')) notes.push('pairs games count as ½');
   if (round && s.total > 0) notes.push(ROUND_LABEL[round]);

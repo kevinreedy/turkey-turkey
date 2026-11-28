@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dealMatch, laneSizes, pairsStructure, gameTotals, settle, reviewMatch, pairKey, mulberry32 } from '../js/engine.js';
+import { dealMatch, laneSizes, pairsStructure, gameTotals, settle, collection, reviewMatch, pairKey, mulberry32 } from '../js/engine.js';
 
 const LANES4 = [17, 18, 19, 20].map((n) => ({ id: `l${n}`, num: String(n) }));
 const LANES2 = LANES4.slice(0, 2);
@@ -202,6 +202,36 @@ test('rounding to the dollar', () => {
   assert.deepEqual(s.rows.map((r) => r.rounded).sort((x, y) => x - y), [8, 8, 13]);
   assert.equal(s.roundedTotal, 29);
   assert.equal(s.total, 29.5);
+});
+
+test('collection tracks who has paid against their current share', () => {
+  const lanes = [{ num: '1', people: ['a', 'b', 'c', 'd'] }];
+  // $40 over 4 games = $10 each.
+  const s = settle([{ format: 'regular', lanes }], { lanes: 40 });
+  const c = collection(s.rows, { a: 10, b: 6, c: 12, d: null }, 0);
+  assert.deepEqual(c.byId.a, { due: 10, paid: 10, left: 0, status: 'paid' });
+  assert.deepEqual(c.byId.b, { due: 10, paid: 6, left: 4, status: 'short' });
+  assert.deepEqual(c.byId.c, { due: 10, paid: 12, left: -2, status: 'over' });
+  assert.deepEqual(c.byId.d, { due: 10, paid: null, left: 10, status: 'unpaid' });
+  assert.equal(c.due, 40);
+  assert.equal(c.collected, 28);
+  assert.equal(c.outstanding, 14);
+  assert.equal(c.refunds, 2);
+  assert.equal(c.paidCount, 1);
+  assert.equal(c.count, 4);
+});
+
+test('paid in full depends on the rounding in use', () => {
+  const lanes = [{ num: '1', people: ['a', 'b', 'c'] }];
+  // $25 over 3 = 8.33 / 8.33 / 8.34; rounded to 50¢ that's 8.50 each.
+  const s = settle([{ format: 'regular', lanes }], { lanes: 25, roundTo: 0.5 });
+  const paid = { a: 8.5, b: 8.5, c: 8.5 };
+  const rounded = collection(s.rows, paid, 0.5);
+  assert.equal(rounded.paidCount, 3);
+  assert.equal(rounded.collected, 25.5);
+  const exact = collection(s.rows, paid, 0);
+  assert.equal(exact.paidCount, 0);
+  assert.ok(Object.values(exact.byId).every((x) => x.status === 'over'));
 });
 
 test('rounding to the nearest 50¢', () => {
