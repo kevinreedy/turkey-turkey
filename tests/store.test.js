@@ -4,7 +4,7 @@ import { defaultState, parseBackup, freshNight } from '../js/store.js';
 
 test('backups round-trip and reject other files', async () => {
   const s = defaultState();
-  s.people.push({ id: 'a', name: 'Priya', here: true, newcomer: true, knows: ['b'], shoes: true });
+  s.people.push({ id: 'a', name: 'Priya', here: true, newcomer: true, knows: ['b'], shoes: true, paid: null });
   s.matches.push({ id: 'm1', n: 1, format: 'regular', lanes: [{ laneId: 'x', num: '17', people: ['a'] }] });
   const text = JSON.stringify({ app: 'turkey-turkey', exportedAt: 'now', state: s });
   const back = parseBackup(text);
@@ -23,9 +23,14 @@ test('rounding choice survives backups, and older on/off saves still load', () =
   assert.equal(freshNight({ ...defaultState(), costs: { shoePrice: '4', round: 0.5 } }).costs.round, 0.5);
 });
 
+test('older saves load with nobody marked paid', () => {
+  const back = parseBackup(JSON.stringify({ people: [{ id: 'a', name: 'Priya' }], lanes: [{ id: 'x', num: '1', on: true }] }));
+  assert.equal(back.people[0].paid, null);
+});
+
 test('a new night keeps the roster and rules but clears games', () => {
   const s = defaultState();
-  s.people.push({ id: 'a', name: 'Priya', here: true, newcomer: true, knows: ['b'], shoes: true });
+  s.people.push({ id: 'a', name: 'Priya', here: true, newcomer: true, knows: ['b'], shoes: true, paid: 12.5 });
   s.never.push(['a', 'b']);
   s.rules.buddyGames = 3;
   s.matches.push({ id: 'm1', n: 1, format: 'regular', lanes: [] });
@@ -33,6 +38,7 @@ test('a new night keeps the roster and rules but clears games', () => {
   const n = freshNight(s);
   assert.equal(n.people[0].here, false);
   assert.equal(n.people[0].shoes, null);
+  assert.equal(n.people[0].paid, null);
   assert.deepEqual(n.costs, { shoePrice: '5', lanes: '', tip: '', round: 1 });
   assert.deepEqual(n.people[0].knows, ['b']);
   assert.deepEqual(n.never, [['a', 'b']]);

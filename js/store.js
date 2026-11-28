@@ -13,7 +13,7 @@ export function defaultState() {
   return {
     v: 1,
     night: { name: `Thanksgiving ${year}`, startedAt: Date.now() },
-    people: [], // {id, name, here, newcomer, knows: [id], shoes: true|false|null}
+    people: [], // {id, name, here, newcomer, knows: [id], shoes: true|false|null, paid: dollars|null}
     never: [], // [idA, idB]
     lanes: ['1', '2', '3', '4'].map((num) => ({ id: newId(), num, on: true })),
     rules: { avoidRepeatLane: true, buddyGames: 2 },
@@ -42,7 +42,7 @@ function normalize(s) {
   if (s.bill && !s.costs) out.costs.lanes = s.bill; // saves from before shoes/tip existed
   out.costs.round = roundStep(out.costs.round);
   delete out.bill;
-  out.people = (s.people || []).map((p) => ({ here: false, newcomer: false, knows: [], shoes: null, ...p }));
+  out.people = (s.people || []).map((p) => ({ here: false, newcomer: false, knows: [], shoes: null, paid: null, ...p }));
   out.never = Array.isArray(s.never) ? s.never.filter((x) => Array.isArray(x) && x.length === 2) : [];
   out.lanes = Array.isArray(s.lanes) && s.lanes.length ? s.lanes : d.lanes;
   out.matches = Array.isArray(s.matches) ? s.matches : [];
@@ -107,7 +107,7 @@ export function freshNight(state) {
   const d = defaultState();
   return {
     ...d,
-    people: state.people.map((p) => ({ ...p, here: false, shoes: null })),
+    people: state.people.map((p) => ({ ...p, here: false, shoes: null, paid: null })),
     never: state.never,
     lanes: state.lanes.map((l) => ({ ...l, on: true })),
     rules: state.rules,

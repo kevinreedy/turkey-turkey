@@ -263,6 +263,22 @@ tfoot td, tfoot th { border-top: 1px solid var(--line); font-weight: 700; color:
 .shoe-btn.on { border-color: transparent; background: var(--accent-soft); color: var(--accent-soft-ink); }
 .shoe-btn.unknown { border-style: dashed; color: var(--text-2); }
 tbody td:has(.shoe-btn) { padding-top: 6px; padding-bottom: 6px; }
+tbody td:has(.owe-btn) { padding-top: 4px; padding-bottom: 4px; }
+.owe-btn { display: inline-grid; grid-template-columns: auto auto; align-items: center; justify-items: end; column-gap: 6px; min-height: 40px; margin-right: -6px; padding: 2px 6px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; font-weight: 700; font-variant-numeric: tabular-nums; }
+.owe-btn:active { background: var(--surface-2); }
+.owe-btn svg { width: 18px; height: 18px; fill: none; stroke: var(--faint); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.owe-btn .st { grid-column: 1 / -1; font-size: 11px; font-weight: 600; }
+.owe-btn.paid .amt { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.owe-btn.paid svg, .owe-btn.paid .st { color: var(--good); stroke: var(--good); }
+.owe-btn.short svg, .owe-btn.short .st { color: var(--accent); stroke: var(--accent); }
+.owe-btn.over svg, .owe-btn.over .st { color: var(--bad-ink); stroke: var(--bad-ink); }
+.collect { display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+.collect-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.collect-head b { font-family: var(--display); font-weight: 800; font-size: 20px; color: var(--good); }
+.collect-head span + span { font-size: 12px; color: var(--muted); }
+.collect .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.collect .bar span { display: block; height: 100%; background: var(--good); border-radius: 3px; }
+.collect p { margin: 0; font-size: 12px; color: var(--muted); }
 
 /* Bottom sheet */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.15s ease-out; }
